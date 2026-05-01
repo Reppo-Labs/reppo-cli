@@ -8,7 +8,7 @@ import type { Address } from 'viem';
 
 export type Network = 'mainnet' | 'testnet';
 
-interface AddressBundle {
+export interface AddressBundle {
   podManager: Address;
   subnetManager: Address;
   reppoToken: Address;

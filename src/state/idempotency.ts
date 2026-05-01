@@ -1,37 +1,95 @@
 /**
- * Idempotency cache. Agents that retry on transient failure must not
- * double-spend (mint twice, vote twice, etc.). They pass --idempotency-key
- * <stable-string>; we cache (key → result_json) on the first successful
- * call, and short-circuit subsequent calls with the cached result.
+ * Idempotency layer. Two-phase write protocol so an agent retry that
+ * fires *during* a transaction (after submit, before receipt) sees the
+ * pending record and short-circuits instead of double-spending.
  *
- * Keys are scoped per command name to prevent cross-command collisions.
+ *   1. begin(key, command)              — write { status: 'pending' }
+ *   2. markSubmitted(key, command, tx)  — write { status: 'submitted', txHash }
+ *   3. markConfirmed(key, command, r)   — write { status: 'confirmed', result, txHash }
+ *      OR
+ *      markFailed(key, command, err)    — write { status: 'failed', result: { error } }
+ *
+ * Callers should pattern-match `getIdempotent(key)` BEFORE doing work:
+ *   - null         → fresh, proceed
+ *   - 'confirmed'  → return cached result
+ *   - 'submitted'  → return cached txHash; the agent can poll the tx
+ *   - 'pending'    → another invocation is mid-flight; refuse with code
+ *   - 'failed'     → previous attempt failed; refuse OR allow retry under
+ *                    a fresh key (caller policy)
  */
-import { getIdempotent as readEntry, saveIdempotent as writeEntry } from './db.js';
+import {
+  getIdempotent as readEntry,
+  upsertIdempotent,
+  type IdempotencyEntry,
+  type IdempotencyStatus,
+} from './db.js';
 
-interface CachedResult {
-  command: string;
-  result: Record<string, unknown>;
-  txHash: string | null;
-  createdAt: number;
-}
+export type { IdempotencyEntry, IdempotencyStatus };
 
-export async function getIdempotent(key: string, command: string): Promise<CachedResult | null> {
+export async function getIdempotent(key: string, command: string): Promise<IdempotencyEntry | null> {
   const entry = await readEntry(key);
   if (!entry) return null;
   if (entry.command !== command) {
-    throw new Error(
-      `idempotency key "${key}" was previously used by command "${entry.command}", ` +
-      `not "${command}". Use a unique key per (command, intent) pair.`,
+    throw Object.assign(
+      new Error(
+        `idempotency key "${key}" was previously used by command "${entry.command}", ` +
+        `not "${command}". Use a unique key per (command, intent) pair.`,
+      ),
+      { code: 'IDEMPOTENCY_COMMAND_MISMATCH' },
     );
   }
   return entry;
 }
 
-export async function saveIdempotent(
+export async function begin(key: string, command: string): Promise<void> {
+  const now = Date.now();
+  await upsertIdempotent(key, {
+    command,
+    status: 'pending',
+    result: {},
+    txHash: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+export async function markSubmitted(key: string, command: string, txHash: string): Promise<void> {
+  const now = Date.now();
+  await upsertIdempotent(key, {
+    command,
+    status: 'submitted',
+    result: { txHash },
+    txHash,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+export async function markConfirmed(
   key: string,
   command: string,
   result: Record<string, unknown>,
-  txHash: string | null,
+  txHash: string,
 ): Promise<void> {
-  await writeEntry(key, { command, result, txHash, createdAt: Date.now() });
+  const now = Date.now();
+  await upsertIdempotent(key, {
+    command,
+    status: 'confirmed',
+    result,
+    txHash,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+export async function markFailed(key: string, command: string, error: string): Promise<void> {
+  const now = Date.now();
+  await upsertIdempotent(key, {
+    command,
+    status: 'failed',
+    result: { error },
+    txHash: null,
+    createdAt: now,
+    updatedAt: now,
+  });
 }

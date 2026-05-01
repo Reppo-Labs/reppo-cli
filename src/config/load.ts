@@ -17,14 +17,19 @@ import type { Network } from '../chain/addresses.js';
 export interface Config {
   network: Network;
   rpcUrl: string | undefined;
-  apiUrl: string;
+  /**
+   * Reppo platform API base URL. Mainnet defaults to https://api.reppo.xyz.
+   * Testnet has no stable hosted endpoint yet — operators MUST set
+   * REPPO_API_URL when network=testnet (commands that don't talk to the
+   * platform API ignore this).
+   */
+  apiUrl: string | undefined;
   apiKey: string | undefined;
   privateKey: `0x${string}` | undefined;
   voterPrivateKey: `0x${string}` | undefined;
 }
 
 const DEFAULT_API_MAINNET = 'https://api.reppo.xyz';
-const DEFAULT_API_TESTNET = 'https://reppofun-env-staging-reppo-ai.vercel.app/api/v1/';
 
 interface RawConfig {
   network?: string;
@@ -68,11 +73,13 @@ export function loadConfig(overrides: { network?: Network } = {}): Config {
     throw new Error(`Invalid network "${network}" — must be "mainnet" or "testnet".`);
   }
 
-  const apiUrl =
+  const apiUrlRaw =
     process.env.REPPO_API_URL ??
     cwd.apiUrl ??
     home.apiUrl ??
-    (network === 'mainnet' ? DEFAULT_API_MAINNET : DEFAULT_API_TESTNET);
+    (network === 'mainnet' ? DEFAULT_API_MAINNET : undefined);
+  // Strip trailing slash so callers can append `${apiUrl}/me/agents` cleanly.
+  const apiUrl = apiUrlRaw?.replace(/\/+$/, '');
 
   return {
     network,

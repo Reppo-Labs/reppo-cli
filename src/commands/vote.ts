@@ -8,15 +8,21 @@
  *   1. Voter has voting power (veREPPO > 0)
  *   2. Voter has subnet access
  * Both produce structured errors with recovery hints.
+ *
+ * Idempotency two-phase write protocol:
+ *   begin → submit tx → markSubmitted → wait receipt → markConfirmed
+ * A retry that fires after submit but before receipt will see the
+ * 'submitted' record and short-circuit with the cached txHash.
  */
 import { Option } from 'clipanion';
 import { BaseCommand } from './_base.js';
 import { emit } from '../output/format.js';
-import { createClients, withTxLock, nextNonce } from '../chain/clients.js';
-import { getAddresses } from '../chain/addresses.js';
-import { POD_MANAGER_TESTNET_ABI, VE_REPPO_ABI, SUBNET_MANAGER_ABI } from '../chain/abis.js';
+import { createClients, nextNonce } from '../chain/clients.js';
+import { podManager, subnetManager, veReppo } from '../chain/contracts.js';
 import { decodeRevert } from '../chain/errors.js';
-import { getIdempotent, saveIdempotent } from '../state/idempotency.js';
+import { getIdempotent, begin, markSubmitted, markConfirmed, markFailed } from '../state/idempotency.js';
+
+const COMMAND = 'vote';
 
 export class VoteCommand extends BaseCommand {
   static override paths = [['vote']];
@@ -57,12 +63,28 @@ export class VoteCommand extends BaseCommand {
         );
       }
 
-      const command = 'vote';
+      // Idempotency: check for prior result before doing any work.
       if (this.idempotencyKey) {
-        const cached = await getIdempotent(this.idempotencyKey, command);
+        const cached = await getIdempotent(this.idempotencyKey, COMMAND);
         if (cached) {
-          emit({ ...cached.result, idempotent: true }, ['(cached) tx: ' + cached.txHash]);
-          return 0;
+          if (cached.status === 'confirmed') {
+            emit({ ...cached.result, idempotent: true, status: 'confirmed' },
+              [`(cached, confirmed) tx: ${cached.txHash ?? 'n/a'}`]);
+            return 0;
+          }
+          if (cached.status === 'submitted') {
+            emit({ ...cached.result, idempotent: true, status: 'submitted' },
+              [`(cached, submitted but not confirmed yet) tx: ${cached.txHash ?? 'n/a'}`,
+               `Re-run after the tx confirms, or check the explorer.`]);
+            return 0;
+          }
+          if (cached.status === 'pending') {
+            throw Object.assign(
+              new Error(`Idempotency key "${this.idempotencyKey}" is in 'pending' state — another invocation is mid-flight.`),
+              { code: 'IDEMPOTENCY_IN_FLIGHT', hint: 'Wait for the in-flight invocation to finish, or use a fresh key.' },
+            );
+          }
+          // status === 'failed' — fall through and retry under the same key
         }
       }
 
@@ -70,21 +92,29 @@ export class VoteCommand extends BaseCommand {
       const subnetId = BigInt(this.subnet);
       const likeBool = this.like;
 
-      const clients = createClients({ network: cfg.network, privateKey: pk, ...(cfg.rpcUrl ? { rpcUrl: cfg.rpcUrl } : {}) });
-      const addrs = getAddresses(cfg.network);
+      const clients = createClients({
+        network: cfg.network,
+        privateKey: pk,
+        ...(cfg.rpcUrl ? { rpcUrl: cfg.rpcUrl } : {}),
+      });
+      const pm = podManager(cfg.network);
+      const sm = subnetManager(cfg.network);
+      const vr = veReppo(cfg.network);
 
+      // Pre-flight: voting power
       const power = (await clients.publicClient.readContract({
-        address: addrs.veReppo, abi: VE_REPPO_ABI, functionName: 'votingPowerOf', args: [clients.account.address],
+        address: vr.address, abi: vr.abi, functionName: 'votingPowerOf', args: [clients.account.address],
       })) as bigint;
       if (power === 0n) {
         throw Object.assign(
           new Error('Voter has zero voting power.'),
-          { code: 'INSUFFICIENT_VOTING_POWER', hint: 'Run `reppo lock <amount> --duration 7200` first.' },
+          { code: 'INSUFFICIENT_VOTING_POWER', hint: 'Run `reppo lock <amount> --duration <seconds>` first.' },
         );
       }
 
+      // Pre-flight: subnet access
       const hasAccess = (await clients.publicClient.readContract({
-        address: addrs.subnetManager, abi: SUBNET_MANAGER_ABI, functionName: 'hasSubnetAccess', args: [subnetId, clients.account.address],
+        address: sm.address, abi: sm.abi, functionName: 'hasSubnetAccess', args: [subnetId, clients.account.address],
       })) as boolean;
       if (!hasAccess) {
         throw Object.assign(
@@ -95,23 +125,44 @@ export class VoteCommand extends BaseCommand {
 
       if (this.dryRun) {
         const sim = await clients.publicClient.simulateContract({
-          address: addrs.podManager, abi: POD_MANAGER_TESTNET_ABI, functionName: 'vote',
+          address: pm.address, abi: pm.abi, functionName: 'vote',
           args: [podId, subnetId, likeBool], account: clients.account,
         }).catch((e) => { throw Object.assign(new Error('Simulation reverted'), decodeRevert(e)); });
-        emit({ simulated: true, podId: podId.toString(), subnetId: subnetId.toString(), like: likeBool, voterPower: power.toString(), gas: sim.request.gas?.toString() ?? null });
+        emit({
+          simulated: true,
+          podId: podId.toString(),
+          subnetId: subnetId.toString(),
+          like: likeBool,
+          voterPower: power.toString(),
+          gas: sim.request.gas?.toString() ?? null,
+        });
         return 0;
       }
 
-      const tx = await withTxLock(async () => {
+      // Two-phase write: begin → submit → markSubmitted → wait → markConfirmed.
+      if (this.idempotencyKey) await begin(this.idempotencyKey, COMMAND);
+
+      let tx: `0x${string}`;
+      try {
         const nonce = await nextNonce(clients.publicClient, clients.account.address);
-        return clients.walletClient.writeContract({
-          address: addrs.podManager, abi: POD_MANAGER_TESTNET_ABI, functionName: 'vote',
-          args: [podId, subnetId, likeBool], chain: clients.walletClient.chain, account: clients.account, nonce,
+        tx = await clients.walletClient.writeContract({
+          address: pm.address, abi: pm.abi, functionName: 'vote',
+          args: [podId, subnetId, likeBool],
+          chain: clients.walletClient.chain, account: clients.account, nonce,
         });
-      }).catch((e) => { throw Object.assign(new Error('Vote tx failed to submit'), decodeRevert(e)); });
+      } catch (e) {
+        const decoded = decodeRevert(e);
+        if (this.idempotencyKey) await markFailed(this.idempotencyKey, COMMAND, decoded.code);
+        throw Object.assign(new Error('Vote tx failed to submit'), decoded);
+      }
+
+      // Persist 'submitted' BEFORE waiting for the receipt — that's the
+      // window where an agent retry could otherwise re-send.
+      if (this.idempotencyKey) await markSubmitted(this.idempotencyKey, COMMAND, tx);
 
       const receipt = await clients.publicClient.waitForTransactionReceipt({ hash: tx, timeout: 120_000 });
       if (receipt.status === 'reverted') {
+        if (this.idempotencyKey) await markFailed(this.idempotencyKey, COMMAND, 'TX_REVERTED');
         throw Object.assign(new Error(`Vote tx reverted: ${tx}`), { code: 'TX_REVERTED' });
       }
 
@@ -126,7 +177,8 @@ export class VoteCommand extends BaseCommand {
           ? `https://basescan.org/tx/${tx}`
           : `https://sepolia.basescan.org/tx/${tx}`,
       };
-      if (this.idempotencyKey) await saveIdempotent(this.idempotencyKey, command, result, tx);
+      if (this.idempotencyKey) await markConfirmed(this.idempotencyKey, COMMAND, result, tx);
+
       emit(result, [
         `✓ Voted on pod ${podId} (${likeBool ? 'like' : 'dislike'})`,
         `  tx: ${result.basescanUrl}`,

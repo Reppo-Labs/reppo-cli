@@ -26,4 +26,17 @@ cli.register(VoteCommand);
 //   lock, unlock, extend-lock,
 //   create-datanet, register-agent, swap.
 
-cli.runExit(process.argv.slice(2));
+// Wrap clipanion's runExit so any synchronous throw during command
+// registration / arg-parsing flows through the structured `fail()`
+// instead of leaking a raw stack to stderr (agents would lose the
+// `code` field they key off).
+import { fail } from './output/format.js';
+
+try {
+  await cli.runExit(process.argv.slice(2));
+} catch (err) {
+  fail({
+    code: 'CLI_INIT_ERROR',
+    message: err instanceof Error ? err.message : String(err),
+  });
+}

@@ -80,12 +80,14 @@ If you get `code: VOTER_LACKS_SUBNET_ACCESS`, run `reppo grant-access --subnet 1
 
 ### Lock REPPO for voting power
 
+The lockup duration is in seconds; the network's minimum and maximum vary, so always check `reppo lock --help` for the current bounds rather than hard-coding a value (testnet minimum is 7200s = 2h; mainnet's is longer).
+
 ```bash
-# Lock 1000 REPPO for 2 hours (testnet minimum)
+# Example: lock 1000 REPPO for 2 hours on testnet
 reppo lock 1000 --duration 7200 --json --idempotency-key lock-1000-2h
 ```
 
-The result includes `votingPowerGained`. Pass that to `reppo query voting-power` to verify.
+The result includes `votingPowerGained`. Verify with `reppo query voting-power`.
 
 ### Mint a pod
 
@@ -129,7 +131,7 @@ reppo create-datanet --name "My A/B Tests" \
 | `VOTER_LACKS_SUBNET_ACCESS` | `reppo grant-access --subnet <id>` first |
 | `PUBLISHER_LACKS_SUBNET_ACCESS` | `reppo grant-access --subnet <id>` for the publisher EOA |
 | `VOTE_REJECTED_PRECONDITION` | Voter is likely the publisher — use a different `REPPO_VOTER_PRIVATE_KEY` |
-| `INSUFFICIENT_ALLOWANCE` | The CLI normally handles approvals; re-run with `--debug` to inspect |
+| `INSUFFICIENT_ALLOWANCE` | A spender is missing an ERC-20 approval. Auto-approval lands in v0.2; for now, send the `approve()` tx manually (e.g. via cast or a small script) before retrying. |
 | `MISSING_PRIVATE_KEY` | Ask the user to set `REPPO_PRIVATE_KEY` (or `REPPO_VOTER_PRIVATE_KEY` for votes) |
 | `MISSING_ADDRESS` | Pass an address argument or set `REPPO_PRIVATE_KEY` |
 | `INVALID_VOTE` | `--like` and `--dislike` are mutually exclusive; pass exactly one |
