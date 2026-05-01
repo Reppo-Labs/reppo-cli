@@ -57,7 +57,12 @@ function emptyState(): State {
  * have to create it before requesting the lock.
  */
 function ensureFile(path: string): void {
-  mkdirSync(dirname(path), { recursive: true });
+  // Owner-only on the parent dir too, not just the state file. mkdirSync
+  // without a mode would default to 0o777 & ~umask (typically 0o755) —
+  // which lets anyone on a shared system enumerate ~/.reppo/ and read
+  // any quarantine files we leave behind.
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  try { chmodSync(dirname(path), 0o700); } catch { /* best-effort */ }
   if (!existsSync(path)) {
     writeFileSync(path, JSON.stringify(emptyState()), { mode: 0o600 });
     return;
@@ -80,7 +85,12 @@ function readUnsafe(path: string): State {
     // surface the corruption to the user. Silently dropping records
     // would defeat the whole idempotency contract.
     const quarantine = `${path}.corrupt-${Date.now()}`;
-    try { renameSync(path, quarantine); } catch { /* best-effort */ }
+    try {
+      renameSync(path, quarantine);
+      // rename preserves perms but be defensive — the source file's
+      // mode might have drifted before the corruption.
+      chmodSync(quarantine, 0o600);
+    } catch { /* best-effort */ }
     process.stderr.write(
       `[reppo-cli] WARNING: state file ${path} was corrupt and has been ` +
       `moved to ${quarantine}. Idempotency cache reset. Original error: ${(err as Error).message}\n`,
@@ -144,15 +154,27 @@ export async function upsertIdempotent(key: string, entry: IdempotencyEntry): Pr
     const prior = s.idempotency[key];
     if (prior) {
       if (prior.command !== entry.command) {
-        throw new Error(
-          `idempotency key "${key}" was previously used by command "${prior.command}", ` +
-          `not "${entry.command}". Use a unique key per (command, intent) pair.`,
+        throw Object.assign(
+          new Error(
+            `idempotency key "${key}" was previously used by command "${prior.command}", ` +
+            `not "${entry.command}". Use a unique key per (command, intent) pair.`,
+          ),
+          {
+            code: 'IDEMPOTENCY_COMMAND_MISMATCH',
+            hint: 'Use a key like "<command>-<intent>-<id>" (e.g. "vote-pod-34-like") so commands cannot collide.',
+          },
         );
       }
       if (prior.status === 'confirmed') {
-        throw new Error(
-          `idempotency key "${key}" is already in terminal state "confirmed"; ` +
-          `refusing to overwrite. Use a new key for a new attempt.`,
+        throw Object.assign(
+          new Error(
+            `idempotency key "${key}" is already in terminal state "confirmed"; ` +
+            `refusing to overwrite. Use a new key for a new attempt.`,
+          ),
+          {
+            code: 'IDEMPOTENCY_TERMINAL_STATE',
+            hint: 'A confirmed key is final. Use a fresh --idempotency-key for a new attempt.',
+          },
         );
       }
     }

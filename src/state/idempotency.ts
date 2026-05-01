@@ -82,13 +82,26 @@ export async function markConfirmed(
   });
 }
 
-export async function markFailed(key: string, command: string, error: string): Promise<void> {
+/**
+ * Mark an idempotency entry as failed. Pass `txHash` when the failure
+ * happened *after* the tx was broadcast (e.g. on-chain revert, receipt
+ * timeout) so the cached entry retains the hash for forensics + so the
+ * "same-key retry on failed" guard in callers can distinguish pre-submit
+ * failures (safe to retry) from post-submit failures (must not retry —
+ * the tx already executed and may have side-effects).
+ */
+export async function markFailed(
+  key: string,
+  command: string,
+  error: string,
+  txHash: string | null = null,
+): Promise<void> {
   const now = Date.now();
   await upsertIdempotent(key, {
     command,
     status: 'failed',
-    result: { error },
-    txHash: null,
+    result: txHash ? { error, txHash } : { error },
+    txHash,
     createdAt: now,
     updatedAt: now,
   });

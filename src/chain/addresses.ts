@@ -47,12 +47,23 @@ export function getAddresses(network: Network): AddressBundle {
   return network === 'mainnet' ? MAINNET : TESTNET;
 }
 
-/** Throws if the address is the TBD placeholder. Use at the call site. */
+/**
+ * Throws if the address is the TBD placeholder. Use at the call site.
+ * The thrown error carries `code: 'ADDRESS_NOT_CONFIGURED'` so agents
+ * can distinguish "missing contract address for this network" from
+ * generic INTERNAL_ERROR bugs.
+ */
 export function requireAddress(addr: Address, label: string): Address {
   if (addr === TBD) {
-    throw new Error(
-      `${label} address is not configured for this network yet. ` +
-      `Edit src/chain/addresses.ts once Reppo publishes it.`,
+    throw Object.assign(
+      new Error(
+        `${label} address is not configured for this network yet. ` +
+        `Edit src/chain/addresses.ts once Reppo publishes it.`,
+      ),
+      {
+        code: 'ADDRESS_NOT_CONFIGURED',
+        hint: `${label} has no address baked in for the selected network. Switch networks with --network, or wait for the address to be published.`,
+      },
     );
   }
   return addr;

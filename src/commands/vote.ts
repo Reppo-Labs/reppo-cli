@@ -63,8 +63,13 @@ export class VoteCommand extends BaseCommand {
         );
       }
 
-      // Idempotency: check for prior result before doing any work.
-      if (this.idempotencyKey) {
+      // Dry-run NEVER consults or mutates the idempotency cache. A
+      // simulation is read-only by definition; returning a cached real
+      // tx hash with `simulated: true` would be a lie, and writing
+      // pending/submitted records would let a sim poison the cache for
+      // the subsequent real call. Handle dry-run inline below, after
+      // pre-flight reads (so it still surfaces revert reasons).
+      if (this.idempotencyKey && !this.dryRun) {
         const cached = await getIdempotent(this.idempotencyKey, COMMAND);
         if (cached) {
           if (cached.status === 'confirmed') {
@@ -84,7 +89,26 @@ export class VoteCommand extends BaseCommand {
               { code: 'IDEMPOTENCY_IN_FLIGHT', hint: 'Wait for the in-flight invocation to finish, or use a fresh key.' },
             );
           }
-          // status === 'failed' — fall through and retry under the same key
+          if (cached.status === 'failed' && cached.txHash) {
+            // The previous attempt with this key broadcast a tx that
+            // then reverted (or timed out post-submit). Re-using the
+            // same key would re-broadcast and pay gas for a second
+            // doomed attempt — exactly what idempotency is supposed
+            // to prevent. Force the caller to a fresh key.
+            throw Object.assign(
+              new Error(
+                `Idempotency key "${this.idempotencyKey}" previously broadcast tx ${cached.txHash} which failed. ` +
+                `Refusing to re-broadcast under the same key.`,
+              ),
+              {
+                code: 'IDEMPOTENCY_FAILED_AFTER_BROADCAST',
+                hint: 'Use a fresh --idempotency-key for the retry, and inspect the prior tx on the block explorer to understand the failure.',
+              },
+            );
+          }
+          // cached.status === 'failed' && !cached.txHash → pre-submit
+          // failure (e.g. validation error). Safe to retry under the
+          // same key; fall through.
         }
       }
 
@@ -162,7 +186,9 @@ export class VoteCommand extends BaseCommand {
 
       const receipt = await clients.publicClient.waitForTransactionReceipt({ hash: tx, timeout: 120_000 });
       if (receipt.status === 'reverted') {
-        if (this.idempotencyKey) await markFailed(this.idempotencyKey, COMMAND, 'TX_REVERTED');
+        // Pass tx hash so the cached failed entry retains it for forensics
+        // AND so the same-key-retry guard (above) refuses re-broadcast.
+        if (this.idempotencyKey) await markFailed(this.idempotencyKey, COMMAND, 'TX_REVERTED', tx);
         throw Object.assign(new Error(`Vote tx reverted: ${tx}`), { code: 'TX_REVERTED' });
       }
 
