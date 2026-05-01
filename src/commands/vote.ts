@@ -63,6 +63,16 @@ export class VoteCommand extends BaseCommand {
         );
       }
 
+      const podId = BigInt(this.pod);
+      const subnetId = BigInt(this.subnet);
+      const likeBool = this.like;
+
+      // Args fingerprint baked into the cache so re-using one key with
+      // different (--pod, --subnet, --like) is rejected with
+      // IDEMPOTENCY_ARGS_MISMATCH instead of silently returning the
+      // wrong cached result.
+      const args = { podId: podId.toString(), subnetId: subnetId.toString(), like: likeBool };
+
       // Dry-run NEVER consults or mutates the idempotency cache. A
       // simulation is read-only by definition; returning a cached real
       // tx hash with `simulated: true` would be a lie, and writing
@@ -70,7 +80,7 @@ export class VoteCommand extends BaseCommand {
       // the subsequent real call. Handle dry-run inline below, after
       // pre-flight reads (so it still surfaces revert reasons).
       if (this.idempotencyKey && !this.dryRun) {
-        const cached = await getIdempotent(this.idempotencyKey, COMMAND);
+        const cached = await getIdempotent(this.idempotencyKey, COMMAND, args);
         if (cached) {
           if (cached.status === 'confirmed') {
             emit({ ...cached.result, idempotent: true, status: 'confirmed' },
@@ -111,10 +121,6 @@ export class VoteCommand extends BaseCommand {
           // same key; fall through.
         }
       }
-
-      const podId = BigInt(this.pod);
-      const subnetId = BigInt(this.subnet);
-      const likeBool = this.like;
 
       const clients = createClients({
         network: cfg.network,
@@ -164,7 +170,7 @@ export class VoteCommand extends BaseCommand {
       }
 
       // Two-phase write: begin → submit → markSubmitted → wait → markConfirmed.
-      if (this.idempotencyKey) await begin(this.idempotencyKey, COMMAND);
+      if (this.idempotencyKey) await begin(this.idempotencyKey, COMMAND, args);
 
       let tx: `0x${string}`;
       try {
@@ -176,19 +182,19 @@ export class VoteCommand extends BaseCommand {
         });
       } catch (e) {
         const decoded = decodeRevert(e);
-        if (this.idempotencyKey) await markFailed(this.idempotencyKey, COMMAND, decoded.code);
+        if (this.idempotencyKey) await markFailed(this.idempotencyKey, COMMAND, args, decoded.code);
         throw Object.assign(new Error('Vote tx failed to submit'), decoded);
       }
 
       // Persist 'submitted' BEFORE waiting for the receipt — that's the
       // window where an agent retry could otherwise re-send.
-      if (this.idempotencyKey) await markSubmitted(this.idempotencyKey, COMMAND, tx);
+      if (this.idempotencyKey) await markSubmitted(this.idempotencyKey, COMMAND, args, tx);
 
       const receipt = await clients.publicClient.waitForTransactionReceipt({ hash: tx, timeout: 120_000 });
       if (receipt.status === 'reverted') {
         // Pass tx hash so the cached failed entry retains it for forensics
         // AND so the same-key-retry guard (above) refuses re-broadcast.
-        if (this.idempotencyKey) await markFailed(this.idempotencyKey, COMMAND, 'TX_REVERTED', tx);
+        if (this.idempotencyKey) await markFailed(this.idempotencyKey, COMMAND, args, 'TX_REVERTED', tx);
         throw Object.assign(new Error(`Vote tx reverted: ${tx}`), { code: 'TX_REVERTED' });
       }
 
@@ -203,7 +209,7 @@ export class VoteCommand extends BaseCommand {
           ? `https://basescan.org/tx/${tx}`
           : `https://sepolia.basescan.org/tx/${tx}`,
       };
-      if (this.idempotencyKey) await markConfirmed(this.idempotencyKey, COMMAND, result, tx);
+      if (this.idempotencyKey) await markConfirmed(this.idempotencyKey, COMMAND, args, result, tx);
 
       emit(result, [
         `✓ Voted on pod ${podId} (${likeBool ? 'like' : 'dislike'})`,

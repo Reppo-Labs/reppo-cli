@@ -24,6 +24,15 @@ export type IdempotencyStatus = 'pending' | 'submitted' | 'confirmed' | 'failed'
 
 export interface IdempotencyEntry {
   command: string;
+  /**
+   * Deterministic SHA-256 of the canonicalized command args (e.g.
+   * `{podId, subnetId, like}` for vote). Stored on first write so the
+   * cache can detect a key being reused for a different intent within
+   * the same command — `IDEMPOTENCY_COMMAND_MISMATCH` only catches
+   * cross-command reuse, not (vote pod 39 like) vs (vote pod 41 dislike)
+   * under one key.
+   */
+  argsFingerprint: string;
   status: IdempotencyStatus;
   result: Record<string, unknown>;
   txHash: string | null;
@@ -144,9 +153,11 @@ export async function getIdempotent(key: string): Promise<IdempotencyEntry | nul
  * Insert OR update an idempotency entry under the lock. Allowed
  * transitions:
  *   - first write (no prior entry): always allowed
- *   - same command, status progression (pending → submitted → confirmed,
- *     pending → failed): allowed
+ *   - same command, same argsFingerprint, non-terminal status: allowed
  *   - different command for the same key: rejected (caller bug)
+ *   - same command, different argsFingerprint: rejected (caller bug —
+ *     reusing one key across different intents would silently return
+ *     the wrong cached result)
  *   - confirmed → anything: rejected (final state)
  */
 export async function upsertIdempotent(key: string, entry: IdempotencyEntry): Promise<void> {
@@ -162,6 +173,19 @@ export async function upsertIdempotent(key: string, entry: IdempotencyEntry): Pr
           {
             code: 'IDEMPOTENCY_COMMAND_MISMATCH',
             hint: 'Use a key like "<command>-<intent>-<id>" (e.g. "vote-pod-34-like") so commands cannot collide.',
+          },
+        );
+      }
+      if (prior.argsFingerprint !== entry.argsFingerprint) {
+        throw Object.assign(
+          new Error(
+            `idempotency key "${key}" was previously used with different args ` +
+            `(fingerprint ${prior.argsFingerprint.slice(0, 12)}…) and is now being reused with new args ` +
+            `(fingerprint ${entry.argsFingerprint.slice(0, 12)}…).`,
+          ),
+          {
+            code: 'IDEMPOTENCY_ARGS_MISMATCH',
+            hint: 'A given idempotency key represents a single intent. Use a fresh key when the args change (e.g. different --pod or --like value).',
           },
         );
       }
