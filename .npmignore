@@ -1,0 +1,12 @@
+src/
+test/
+docs/
+claude-skill/
+.github/
+tsconfig*.json
+vitest*.config.ts
+.eslintrc*
+.editorconfig
+*.test.ts
+coverage/
+.vitest/
