@@ -42,17 +42,18 @@ export type { IdempotencyEntry, IdempotencyStatus };
  * representation choices below matter for matching across runs.
  */
 export function fingerprintArgs(args: Record<string, unknown>): string {
-  const canonical = JSON.stringify(args, (_key, value) => {
+  const replacer = (_key: string, value: unknown): unknown => {
     if (typeof value === 'bigint') return value.toString();
     if (value && typeof value === 'object' && !Array.isArray(value)) {
       const sorted: Record<string, unknown> = {};
-      for (const k of Object.keys(value as Record<string, unknown>).sort()) {
+      for (const k of Object.keys(value).sort()) {
         sorted[k] = (value as Record<string, unknown>)[k];
       }
       return sorted;
     }
     return value;
-  });
+  };
+  const canonical = JSON.stringify(args, replacer);
   return createHash('sha256').update(canonical).digest('hex');
 }
 

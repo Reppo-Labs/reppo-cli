@@ -53,7 +53,7 @@ function normalizePk(raw: string | undefined): `0x${string}` | undefined {
     return trimmed as `0x${string}`;
   }
   if (/^[0-9a-fA-F]{64}$/.test(trimmed)) {
-    return `0x${trimmed}` as `0x${string}`;
+    return `0x${trimmed}`;
   }
   throw new Error('Private key must be a 32-byte hex string (0x-prefixed or bare 64 hex chars).');
 }
@@ -62,16 +62,17 @@ export function loadConfig(overrides: { network?: Network } = {}): Config {
   const cwd = readJsonIfExists(join(process.cwd(), '.reppo.json'));
   const home = readJsonIfExists(join(homedir(), '.reppo', 'config.json'));
 
-  const network: Network =
+  const networkRaw: string =
     overrides.network ??
-    (process.env.REPPO_NETWORK as Network | undefined) ??
-    (cwd.network as Network | undefined) ??
-    (home.network as Network | undefined) ??
+    process.env.REPPO_NETWORK ??
+    cwd.network ??
+    home.network ??
     'mainnet';
 
-  if (network !== 'mainnet' && network !== 'testnet') {
-    throw new Error(`Invalid network "${network}" — must be "mainnet" or "testnet".`);
+  if (networkRaw !== 'mainnet' && networkRaw !== 'testnet') {
+    throw new Error(`Invalid network "${networkRaw}" — must be "mainnet" or "testnet".`);
   }
+  const network: Network = networkRaw;
 
   const apiUrlRaw =
     process.env.REPPO_API_URL ??
