@@ -50,19 +50,19 @@ export class QueryBalanceCommand extends BaseCommand {
         ? { unavailable: `REPPO token address not configured for ${cfg.network}.` }
         : await client.readContract({
             address: addrs.reppoToken, abi: ERC20_ABI, functionName: 'balanceOf', args: [addr],
-          }).then((v) => ({ raw: (v as bigint).toString(), formatted: formatUnits(v as bigint, 18) }));
+          }).then((v) => ({ raw: (v).toString(), formatted: formatUnits(v, 18) }));
 
       const veReppo: Balance = addrs.veReppo === TBD
         ? { unavailable: `veReppo address not configured for ${cfg.network}.` }
         : await client.readContract({
             address: addrs.veReppo, abi: VE_REPPO_ABI, functionName: 'votingPowerOf', args: [addr],
-          }).then((v) => ({ raw: (v as bigint).toString(), formatted: formatUnits(v as bigint, 18) }));
+          }).then((v) => ({ raw: (v).toString(), formatted: formatUnits(v, 18) }));
 
       const usdc: Balance = addrs.usdc === TBD
         ? { unavailable: `USDC address not configured for ${cfg.network}.` }
         : await client.readContract({
             address: addrs.usdc, abi: ERC20_ABI, functionName: 'balanceOf', args: [addr],
-          }).then((v) => ({ raw: (v as bigint).toString(), formatted: formatUnits(v as bigint, 6) }));
+          }).then((v) => ({ raw: (v).toString(), formatted: formatUnits(v, 6) }));
 
       const result = {
         address: addr,

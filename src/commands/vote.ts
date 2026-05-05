@@ -134,7 +134,7 @@ export class VoteCommand extends BaseCommand {
       // Pre-flight: voting power
       const power = (await clients.publicClient.readContract({
         address: vr.address, abi: vr.abi, functionName: 'votingPowerOf', args: [clients.account.address],
-      })) as bigint;
+      }));
       if (power === 0n) {
         throw Object.assign(
           new Error('Voter has zero voting power.'),
@@ -145,7 +145,7 @@ export class VoteCommand extends BaseCommand {
       // Pre-flight: subnet access
       const hasAccess = (await clients.publicClient.readContract({
         address: sm.address, abi: sm.abi, functionName: 'hasSubnetAccess', args: [subnetId, clients.account.address],
-      })) as boolean;
+      }));
       if (!hasAccess) {
         throw Object.assign(
           new Error(`Voter lacks subnet ${subnetId} access.`),
