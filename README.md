@@ -2,7 +2,7 @@
 
 Command-line interface for [Reppo](https://reppo.ai) — mint pods, vote, lock REPPO, manage datanets. Built for **AI agents** as the primary user, but humans can use it too.
 
-> **Status:** v0.1.0-alpha. The query + vote + lock commands ship in alpha. The remaining 12 commands are scaffolded but not yet wired.
+> **Status:** v0.1.0-alpha. `query balance` and `vote` ship in alpha. The remaining 13 commands are scaffolded but not yet wired.
 
 ## Install
 
@@ -62,7 +62,7 @@ Errors **always** emit JSON on stderr regardless of mode, with a stable `code` f
 
 ## Idempotency
 
-Every write command accepts `--idempotency-key <stable-string>`. The CLI caches the result (in `~/.reppo/cli-state.db`); repeat calls with the same key skip signing and return the prior tx hash. Critical for agent retry loops.
+Every write command accepts `--idempotency-key <stable-string>`. The CLI caches the result (in `~/.reppo/cli-state.json`); repeat calls with the same key skip signing and return the prior tx hash. Critical for agent retry loops.
 
 ## Dry run
 
