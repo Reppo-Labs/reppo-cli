@@ -36,7 +36,7 @@
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsx src/bin.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "test:watch": "vitest",
     "prepublishOnly": "npm run typecheck && npm run test && npm run build"
   },
