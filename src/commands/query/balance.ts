@@ -9,19 +9,20 @@
  * "the CLI doesn't know where to look".
  */
 import { Option } from 'clipanion';
-import { formatUnits, type Address } from 'viem';
+import { formatUnits, isAddress, type Address } from 'viem';
 import { privateKeyToAddress } from 'viem/accounts';
 import { BaseCommand } from '../_base.js';
-import { emit } from '../../output/format.js';
+import { cliError, emit } from '../../output/format.js';
 import { createReadClient } from '../../chain/clients.js';
-import { getAddresses } from '../../chain/addresses.js';
-import { ERC20_ABI, VE_REPPO_ABI } from '../../chain/abis.js';
-
-const TBD = '0x0000000000000000000000000000000000000000' as const;
+import { tryReppoToken, tryUsdcToken, tryVeReppo } from '../../chain/contracts.js';
 
 type Balance =
   | { raw: string; formatted: string }
   | { unavailable: string };
+
+function unavailable(label: string, network: string): Balance {
+  return { unavailable: `${label} address not configured for ${network}.` };
+}
 
 export class QueryBalanceCommand extends BaseCommand {
   static override paths = [['query', 'balance']];
@@ -41,28 +42,27 @@ export class QueryBalanceCommand extends BaseCommand {
     try {
       const cfg = this.loadConfig();
       const addr = this.resolveAddress(cfg.privateKey);
-      const addrs = getAddresses(cfg.network);
       const client = createReadClient({ network: cfg.network, ...(cfg.rpcUrl ? { rpcUrl: cfg.rpcUrl } : {}) });
 
       const eth = await client.getBalance({ address: addr });
 
-      const reppo: Balance = addrs.reppoToken === TBD
-        ? { unavailable: `REPPO token address not configured for ${cfg.network}.` }
-        : await client.readContract({
-            address: addrs.reppoToken, abi: ERC20_ABI, functionName: 'balanceOf', args: [addr],
-          }).then((v) => ({ raw: (v).toString(), formatted: formatUnits(v, 18) }));
+      const reppoContract = tryReppoToken(cfg.network);
+      const reppo: Balance = reppoContract
+        ? await client.readContract({ ...reppoContract, functionName: 'balanceOf', args: [addr] })
+            .then((v) => ({ raw: v.toString(), formatted: formatUnits(v, 18) }))
+        : unavailable('REPPO token', cfg.network);
 
-      const veReppo: Balance = addrs.veReppo === TBD
-        ? { unavailable: `veReppo address not configured for ${cfg.network}.` }
-        : await client.readContract({
-            address: addrs.veReppo, abi: VE_REPPO_ABI, functionName: 'votingPowerOf', args: [addr],
-          }).then((v) => ({ raw: (v).toString(), formatted: formatUnits(v, 18) }));
+      const veReppoContract = tryVeReppo(cfg.network);
+      const veReppo: Balance = veReppoContract
+        ? await client.readContract({ ...veReppoContract, functionName: 'votingPowerOf', args: [addr] })
+            .then((v) => ({ raw: v.toString(), formatted: formatUnits(v, 18) }))
+        : unavailable('veReppo', cfg.network);
 
-      const usdc: Balance = addrs.usdc === TBD
-        ? { unavailable: `USDC address not configured for ${cfg.network}.` }
-        : await client.readContract({
-            address: addrs.usdc, abi: ERC20_ABI, functionName: 'balanceOf', args: [addr],
-          }).then((v) => ({ raw: (v).toString(), formatted: formatUnits(v, 6) }));
+      const usdcContract = tryUsdcToken(cfg.network);
+      const usdc: Balance = usdcContract
+        ? await client.readContract({ ...usdcContract, functionName: 'balanceOf', args: [addr] })
+            .then((v) => ({ raw: v.toString(), formatted: formatUnits(v, 6) }))
+        : unavailable('USDC', cfg.network);
 
       const result = {
         address: addr,
@@ -94,15 +94,16 @@ export class QueryBalanceCommand extends BaseCommand {
 
   private resolveAddress(pk: `0x${string}` | undefined): Address {
     if (this.address) {
-      if (!/^0x[0-9a-fA-F]{40}$/.test(this.address)) {
-        throw Object.assign(new Error(`Invalid address: ${this.address}`), { code: 'INVALID_ADDRESS' });
+      if (!isAddress(this.address)) {
+        throw cliError('INVALID_ADDRESS', `Invalid address: ${this.address}`);
       }
-      return this.address as Address;
+      return this.address;
     }
     if (!pk) {
-      throw Object.assign(
-        new Error('No address provided and REPPO_PRIVATE_KEY not set.'),
-        { code: 'MISSING_ADDRESS', hint: 'Pass an address argument or set REPPO_PRIVATE_KEY in env.' },
+      throw cliError(
+        'MISSING_ADDRESS',
+        'No address provided and REPPO_PRIVATE_KEY not set.',
+        'Pass an address argument or set REPPO_PRIVATE_KEY in env.',
       );
     }
     return privateKeyToAddress(pk);
