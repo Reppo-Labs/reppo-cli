@@ -1,0 +1,25 @@
+name: Integration
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly Monday 06:00 UTC. Catches drift from contract redeploys or
+    # viem/anvil version bumps without burning RPC quota on every PR.
+    - cron: '0 6 * * 1'
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - uses: foundry-rs/foundry-toolchain@v1
+      - run: npm ci
+      - run: npm run test:integration
+        env:
+          BASE_RPC_URL: ${{ secrets.BASE_RPC_URL }}
+          BASE_FORK_BLOCK: ${{ vars.BASE_FORK_BLOCK }}
