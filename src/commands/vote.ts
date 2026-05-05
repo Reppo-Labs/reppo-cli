@@ -16,11 +16,11 @@
  */
 import { Option } from 'clipanion';
 import { BaseCommand } from './_base.js';
-import { emit } from '../output/format.js';
+import { cliError, emit } from '../output/format.js';
 import { createClients, nextNonce } from '../chain/clients.js';
 import { podManager, subnetManager, veReppo } from '../chain/contracts.js';
 import { decodeRevert } from '../chain/errors.js';
-import { getIdempotent, begin, markSubmitted, markConfirmed, markFailed } from '../state/idempotency.js';
+import { begin, markSubmitted, markConfirmed, markFailed, peekIdempotent } from '../state/idempotency.js';
 
 const COMMAND = 'vote';
 
@@ -49,17 +49,19 @@ export class VoteCommand extends BaseCommand {
   async execute(): Promise<number> {
     try {
       if (this.like === this.dislike) {
-        throw Object.assign(
-          new Error('Pass exactly one of --like or --dislike.'),
-          { code: 'INVALID_VOTE', hint: '--like and --dislike are mutually exclusive and one is required.' },
+        throw cliError(
+          'INVALID_VOTE',
+          'Pass exactly one of --like or --dislike.',
+          '--like and --dislike are mutually exclusive and one is required.',
         );
       }
       const cfg = this.loadConfig();
       const pk = cfg.voterPrivateKey ?? cfg.privateKey;
       if (!pk) {
-        throw Object.assign(
-          new Error('No signing key available.'),
-          { code: 'MISSING_PRIVATE_KEY', hint: 'Set REPPO_VOTER_PRIVATE_KEY (preferred) or REPPO_PRIVATE_KEY in env.' },
+        throw cliError(
+          'MISSING_PRIVATE_KEY',
+          'No signing key available.',
+          'Set REPPO_VOTER_PRIVATE_KEY (preferred) or REPPO_PRIVATE_KEY in env.',
         );
       }
 
@@ -77,49 +79,22 @@ export class VoteCommand extends BaseCommand {
       // simulation is read-only by definition; returning a cached real
       // tx hash with `simulated: true` would be a lie, and writing
       // pending/submitted records would let a sim poison the cache for
-      // the subsequent real call. Handle dry-run inline below, after
-      // pre-flight reads (so it still surfaces revert reasons).
-      if (this.idempotencyKey && !this.dryRun) {
-        const cached = await getIdempotent(this.idempotencyKey, COMMAND, args);
-        if (cached) {
-          if (cached.status === 'confirmed') {
-            emit({ ...cached.result, idempotent: true, status: 'confirmed' },
-              [`(cached, confirmed) tx: ${cached.txHash ?? 'n/a'}`]);
-            return 0;
-          }
-          if (cached.status === 'submitted') {
-            emit({ ...cached.result, idempotent: true, status: 'submitted' },
-              [`(cached, submitted but not confirmed yet) tx: ${cached.txHash ?? 'n/a'}`,
-               `Re-run after the tx confirms, or check the explorer.`]);
-            return 0;
-          }
-          if (cached.status === 'pending') {
-            throw Object.assign(
-              new Error(`Idempotency key "${this.idempotencyKey}" is in 'pending' state — another invocation is mid-flight.`),
-              { code: 'IDEMPOTENCY_IN_FLIGHT', hint: 'Wait for the in-flight invocation to finish, or use a fresh key.' },
-            );
-          }
-          if (cached.status === 'failed' && cached.txHash) {
-            // The previous attempt with this key broadcast a tx that
-            // then reverted (or timed out post-submit). Re-using the
-            // same key would re-broadcast and pay gas for a second
-            // doomed attempt — exactly what idempotency is supposed
-            // to prevent. Force the caller to a fresh key.
-            throw Object.assign(
-              new Error(
-                `Idempotency key "${this.idempotencyKey}" previously broadcast tx ${cached.txHash} which failed. ` +
-                `Refusing to re-broadcast under the same key.`,
-              ),
-              {
-                code: 'IDEMPOTENCY_FAILED_AFTER_BROADCAST',
-                hint: 'Use a fresh --idempotency-key for the retry, and inspect the prior tx on the block explorer to understand the failure.',
-              },
-            );
-          }
-          // cached.status === 'failed' && !cached.txHash → pre-submit
-          // failure (e.g. validation error). Safe to retry under the
-          // same key; fall through.
-        }
+      // the subsequent real call. peekIdempotent enforces that policy
+      // (4th arg: isDryRun) and centralizes the pending/failed-after-
+      // broadcast guards so future commands share the same rules.
+      const decision = await peekIdempotent<Record<string, unknown>>(
+        this.idempotencyKey, COMMAND, args, this.dryRun,
+      );
+      if (decision.kind === 'return-confirmed') {
+        emit({ ...decision.result, idempotent: true, status: 'confirmed' },
+          [`(cached, confirmed) tx: ${decision.txHash ?? 'n/a'}`]);
+        return 0;
+      }
+      if (decision.kind === 'return-submitted') {
+        emit({ ...decision.result, idempotent: true, status: 'submitted' },
+          [`(cached, submitted but not confirmed yet) tx: ${decision.txHash ?? 'n/a'}`,
+           `Re-run after the tx confirms, or check the explorer.`]);
+        return 0;
       }
 
       const clients = createClients({
@@ -136,9 +111,10 @@ export class VoteCommand extends BaseCommand {
         address: vr.address, abi: vr.abi, functionName: 'votingPowerOf', args: [clients.account.address],
       }));
       if (power === 0n) {
-        throw Object.assign(
-          new Error('Voter has zero voting power.'),
-          { code: 'INSUFFICIENT_VOTING_POWER', hint: 'Run `reppo lock <amount> --duration <seconds>` first.' },
+        throw cliError(
+          'INSUFFICIENT_VOTING_POWER',
+          'Voter has zero voting power.',
+          'Run `reppo lock <amount> --duration <seconds>` first.',
         );
       }
 
@@ -147,9 +123,10 @@ export class VoteCommand extends BaseCommand {
         address: sm.address, abi: sm.abi, functionName: 'hasSubnetAccess', args: [subnetId, clients.account.address],
       }));
       if (!hasAccess) {
-        throw Object.assign(
-          new Error(`Voter lacks subnet ${subnetId} access.`),
-          { code: 'VOTER_LACKS_SUBNET_ACCESS', hint: `Run \`reppo grant-access --subnet ${subnetId}\` first.` },
+        throw cliError(
+          'VOTER_LACKS_SUBNET_ACCESS',
+          `Voter lacks subnet ${subnetId} access.`,
+          `Run \`reppo grant-access --subnet ${subnetId}\` first.`,
         );
       }
 
@@ -157,7 +134,10 @@ export class VoteCommand extends BaseCommand {
         const sim = await clients.publicClient.simulateContract({
           address: pm.address, abi: pm.abi, functionName: 'vote',
           args: [podId, subnetId, likeBool], account: clients.account,
-        }).catch((e) => { throw Object.assign(new Error('Simulation reverted'), decodeRevert(e)); });
+        }).catch((e) => {
+          const decoded = decodeRevert(e);
+          throw cliError(decoded.code, 'Simulation reverted', decoded.hint);
+        });
         emit({
           simulated: true,
           podId: podId.toString(),
@@ -183,7 +163,7 @@ export class VoteCommand extends BaseCommand {
       } catch (e) {
         const decoded = decodeRevert(e);
         if (this.idempotencyKey) await markFailed(this.idempotencyKey, COMMAND, args, decoded.code);
-        throw Object.assign(new Error('Vote tx failed to submit'), decoded);
+        throw cliError(decoded.code, 'Vote tx failed to submit', decoded.hint);
       }
 
       // Persist 'submitted' BEFORE waiting for the receipt — that's the
@@ -195,7 +175,7 @@ export class VoteCommand extends BaseCommand {
         // Pass tx hash so the cached failed entry retains it for forensics
         // AND so the same-key-retry guard (above) refuses re-broadcast.
         if (this.idempotencyKey) await markFailed(this.idempotencyKey, COMMAND, args, 'TX_REVERTED', tx);
-        throw Object.assign(new Error(`Vote tx reverted: ${tx}`), { code: 'TX_REVERTED' });
+        throw cliError('TX_REVERTED', `Vote tx reverted: ${tx}`);
       }
 
       const result = {

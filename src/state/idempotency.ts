@@ -31,8 +31,24 @@ import {
   type IdempotencyEntry,
   type IdempotencyStatus,
 } from './db.js';
+import { cliError } from '../output/format.js';
 
 export type { IdempotencyEntry, IdempotencyStatus };
+
+/**
+ * Decision returned by `peekIdempotent` so write commands can decide what
+ * to do *before* spending gas:
+ *   - 'proceed'           — no cache hit (or pre-submit failure); do the work.
+ *   - 'return-confirmed'  — cache has a final result; emit it and skip.
+ *   - 'return-submitted'  — cache has a tx hash that hasn't confirmed yet;
+ *                           emit it and tell the caller to poll the explorer.
+ * Two terminal "do not retry" states (`pending`, `failed-after-broadcast`)
+ * throw inside the helper because they never make sense to handle inline.
+ */
+export type CacheDecision<R> =
+  | { kind: 'proceed' }
+  | { kind: 'return-confirmed'; result: R; txHash: string | null }
+  | { kind: 'return-submitted'; result: R; txHash: string | null };
 
 /**
  * SHA-256 of the canonicalized JSON of the args object. Object keys are
@@ -101,6 +117,63 @@ export async function getIdempotent(
     );
   }
   return entry;
+}
+
+/**
+ * Inspect the idempotency cache and decide whether the caller should
+ * proceed with a write. Lifts the cache-decision logic that previously
+ * lived inline in `vote.ts` so every write command shares the same
+ * policy:
+ *   - dry-run: never consult or mutate the cache (sim is read-only;
+ *     persisting a "submitted" record would let a sim poison the cache
+ *     for the next real call).
+ *   - confirmed: short-circuit with the cached result.
+ *   - submitted: short-circuit with the cached tx hash; user polls.
+ *   - pending:   refuse — another invocation is mid-flight.
+ *   - failed + txHash: refuse — re-broadcasting under the same key would
+ *     pay gas for a second doomed attempt; force a fresh key.
+ *   - failed + no txHash: pre-submit failure, safe to retry: 'proceed'.
+ *
+ * The result type `R` matches the shape the command stores via
+ * `markConfirmed` (e.g. `{ txHash, podId, ..., basescanUrl }` for vote).
+ * Cached results are typed as the caller's `R`; runtime shape is whatever
+ * the original `markConfirmed` recorded.
+ */
+export async function peekIdempotent<R>(
+  key: string | undefined,
+  command: string,
+  args: Record<string, unknown>,
+  isDryRun: boolean,
+): Promise<CacheDecision<R>> {
+  if (!key || isDryRun) return { kind: 'proceed' };
+
+  const cached = await getIdempotent(key, command, args);
+  if (!cached) return { kind: 'proceed' };
+
+  switch (cached.status) {
+    case 'confirmed':
+      return { kind: 'return-confirmed', result: cached.result as R, txHash: cached.txHash };
+    case 'submitted':
+      return { kind: 'return-submitted', result: cached.result as R, txHash: cached.txHash };
+    case 'pending':
+      throw cliError(
+        'IDEMPOTENCY_IN_FLIGHT',
+        `Idempotency key "${key}" is in 'pending' state — another invocation is mid-flight.`,
+        'Wait for the in-flight invocation to finish, or use a fresh key.',
+      );
+    case 'failed':
+      if (cached.txHash) {
+        throw cliError(
+          'IDEMPOTENCY_FAILED_AFTER_BROADCAST',
+          `Idempotency key "${key}" previously broadcast tx ${cached.txHash} which failed. ` +
+            `Refusing to re-broadcast under the same key.`,
+          'Use a fresh --idempotency-key for the retry, and inspect the prior tx on the block explorer to understand the failure.',
+        );
+      }
+      // Pre-submit failure (e.g. validation error). Safe to retry under
+      // the same key; fall through.
+      return { kind: 'proceed' };
+  }
 }
 
 export async function begin(
