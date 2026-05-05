@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "for p in $CLAUDE_FILE_PATHS; do case \"$p\" in dist/*|*/dist/*|package-lock.json|*/package-lock.json|coverage/*|*/coverage/*|*/.reppo/cli-state.json) echo \"Blocked: $p is a generated/state file. Run the build/install instead of editing it directly.\" >&2; exit 2;; esac; done"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "for p in $CLAUDE_FILE_PATHS; do case \"$p\" in src/*.ts) npx eslint --fix \"$p\" 2>/dev/null || true;; esac; done"
+          }
+        ]
+      }
+    ]
+  }
+}
