@@ -5,7 +5,7 @@
  */
 import { Cli, Builtins } from 'clipanion';
 import { QueryBalanceCommand } from './commands/query/balance.js';
-import { QuerySubnetCommand } from './commands/query/subnet.js';
+import { QueryDatanetCommand } from './commands/query/datanet.js';
 import { VoteCommand } from './commands/vote.js';
 
 const cli = new Cli({
@@ -19,7 +19,7 @@ cli.register(Builtins.HelpCommand);
 cli.register(Builtins.VersionCommand);
 
 cli.register(QueryBalanceCommand);
-cli.register(QuerySubnetCommand);
+cli.register(QueryDatanetCommand);
 cli.register(VoteCommand);
 
 // TODO: register remaining 12 commands as they're implemented:

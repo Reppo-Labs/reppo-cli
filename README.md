@@ -2,7 +2,7 @@
 
 Command-line interface for [Reppo](https://reppo.ai) — mint pods, vote, lock REPPO, manage datanets. Built for **AI agents** as the primary user, but humans can use it too.
 
-> **Status:** v0.1.0-alpha. `query balance`, `query subnet`, and `vote` ship in alpha. The remaining 12 commands are scaffolded but not yet wired.
+> **Status:** v0.1.0-alpha. `query balance`, `query datanet`, and `vote` ship in alpha. The remaining 12 commands are scaffolded but not yet wired.
 
 ## Install
 
@@ -44,7 +44,7 @@ Errors **always** emit JSON on stderr regardless of mode, with a stable `code` f
 - `reppo query balance [address]` — ETH + REPPO + veREPPO + USDC
 - `reppo query voting-power [address]` *(planned)*
 - `reppo query pod <podId>` *(planned)*
-- `reppo query subnet <subnetId> [--for <addr>]` — validity + REPPO access fee, optionally check access for an address
+- `reppo query datanet <datanetId> [--for <addr>]` — validity + REPPO access fee, optionally check access for an address
 - `reppo query emissions-due [address]` *(planned)*
 
 ### Write
