@@ -5,6 +5,7 @@
  */
 import { Cli, Builtins } from 'clipanion';
 import { QueryBalanceCommand } from './commands/query/balance.js';
+import { QueryPodCommand } from './commands/query/pod.js';
 import { QuerySubnetCommand } from './commands/query/subnet.js';
 import { VoteCommand } from './commands/vote.js';
 
@@ -19,11 +20,12 @@ cli.register(Builtins.HelpCommand);
 cli.register(Builtins.VersionCommand);
 
 cli.register(QueryBalanceCommand);
+cli.register(QueryPodCommand);
 cli.register(QuerySubnetCommand);
 cli.register(VoteCommand);
 
-// TODO: register remaining 12 commands as they're implemented:
-//   query pod, query voting-power, query emissions-due,
+// TODO: register remaining 11 commands as they're implemented:
+//   query voting-power, query emissions-due,
 //   mint-pod, claim-emissions, grant-access,
 //   lock, unlock, extend-lock,
 //   create-datanet, register-agent, swap.
