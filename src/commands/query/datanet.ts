@@ -1,7 +1,11 @@
 /**
- * `reppo query subnet <subnetId> [--for <address>]` — show whether a
- * subnet exists, its REPPO access fee, and (optionally) whether a given
+ * `reppo query datanet <datanetId> [--for <address>]` — show whether a
+ * datanet exists, its REPPO access fee, and (optionally) whether a given
  * address has access.
+ *
+ * "Datanet" is Reppo's user-facing term; on-chain the same concept is
+ * called a "subnet" (SubnetManager, validSubnet, hasSubnetAccess). The
+ * CLI uses the user-facing term at its surface and translates internally.
  *
  * Resolution order for the access check:
  *   1. --for <addr>            (explicit, no key needed)
@@ -26,49 +30,49 @@ function unavailable(reason: string): { unavailable: string } {
   return { unavailable: reason };
 }
 
-export class QuerySubnetCommand extends BaseCommand {
-  static override paths = [['query', 'subnet']];
+export class QueryDatanetCommand extends BaseCommand {
+  static override paths = [['query', 'datanet']];
 
   static override usage = BaseCommand.Usage({
-    description: 'Show subnet validity, REPPO access fee, and (optionally) whether an address has access.',
+    description: 'Show datanet validity, REPPO access fee, and (optionally) whether an address has access.',
     examples: [
-      ['Inspect subnet 19',
-        'reppo query subnet 19'],
+      ['Inspect datanet 19',
+        'reppo query datanet 19'],
       ['Check whether a specific address has access',
-        'reppo query subnet 19 --for 0x726c…E31d'],
+        'reppo query datanet 19 --for 0x726c…E31d'],
       ['JSON output for an agent',
-        'reppo query subnet 19 --json'],
+        'reppo query datanet 19 --json'],
     ],
   });
 
-  subnet = Option.String({ required: true });
+  datanet = Option.String({ required: true });
   for_ = Option.String('--for', { description: 'Address to check access for (defaults to address derived from REPPO_PRIVATE_KEY)' });
 
   async execute(): Promise<number> {
     try {
       const cfg = this.loadConfig();
 
-      let subnetId: bigint;
+      let datanetId: bigint;
       try {
-        subnetId = BigInt(this.subnet);
+        datanetId = BigInt(this.datanet);
       } catch {
-        throw cliError('INVALID_SUBNET_ID', `Subnet id must be a non-negative integer; got "${this.subnet}".`);
+        throw cliError('INVALID_DATANET_ID', `Datanet id must be a non-negative integer; got "${this.datanet}".`);
       }
 
       const client = createReadClient({ network: cfg.network, ...(cfg.rpcUrl ? { rpcUrl: cfg.rpcUrl } : {}) });
       const sm = trySubnetManager(cfg.network);
 
       if (!sm) {
-        const reason = `SubnetManager address not configured for ${cfg.network}.`;
+        const reason = `Datanet manager address not configured for ${cfg.network}.`;
         emit(
           {
-            subnetId: subnetId.toString(),
+            datanetId: datanetId.toString(),
             network: cfg.network,
             valid: unavailable(reason),
             accessFeeREPPO: unavailable(reason),
           },
           [
-            `Subnet:        ${subnetId}`,
+            `Datanet:       ${datanetId}`,
             `Network:       ${cfg.network}`,
             `(unavailable: ${reason})`,
           ],
@@ -76,15 +80,16 @@ export class QuerySubnetCommand extends BaseCommand {
         return 0;
       }
 
-      const valid: boolean = await client.readContract({ ...sm, functionName: 'validSubnet', args: [subnetId] });
+      // On-chain function names use the legacy "subnet" naming; CLI surface uses datanet.
+      const valid: boolean = await client.readContract({ ...sm, functionName: 'validSubnet', args: [datanetId] });
 
-      // Skip the fee read on invalid subnets — getAccessFeeREPPO is likely
-      // to revert (or return 0) for non-existent subnets, and either way
-      // the answer is "no fee because there is no subnet", not "fee is 0".
+      // Skip the fee read on invalid datanets — getAccessFeeREPPO is likely
+      // to revert (or return 0) for non-existent datanets, and either way
+      // the answer is "no fee because there is no datanet", not "fee is 0".
       const accessFeeREPPO: Numeric = valid
-        ? await client.readContract({ ...sm, functionName: 'getAccessFeeREPPO', args: [subnetId] })
+        ? await client.readContract({ ...sm, functionName: 'getAccessFeeREPPO', args: [datanetId] })
             .then((v) => ({ raw: v.toString(), formatted: formatUnits(v, 18) }))
-        : unavailable('subnet does not exist');
+        : unavailable('datanet does not exist');
 
       // Optional caller-access check.
       const callerAddr = this.resolveCallerAddress(cfg.privateKey);
@@ -92,13 +97,13 @@ export class QuerySubnetCommand extends BaseCommand {
         ? {
             address: callerAddr,
             hasAccess: await client.readContract({
-              ...sm, functionName: 'hasSubnetAccess', args: [subnetId, callerAddr],
+              ...sm, functionName: 'hasSubnetAccess', args: [datanetId, callerAddr],
             }),
           }
         : undefined;
 
       const result = {
-        subnetId: subnetId.toString(),
+        datanetId: datanetId.toString(),
         network: cfg.network,
         valid,
         accessFeeREPPO,
@@ -110,7 +115,7 @@ export class QuerySubnetCommand extends BaseCommand {
         : `${accessFeeREPPO.formatted} REPPO`;
 
       const lines = [
-        `Subnet:        ${subnetId}`,
+        `Datanet:       ${datanetId}`,
         `Network:       ${cfg.network}`,
         `Valid:         ${valid}`,
         `Access fee:    ${feeFmt}`,
