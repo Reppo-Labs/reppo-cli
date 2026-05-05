@@ -68,6 +68,29 @@ Every write command accepts `--idempotency-key <stable-string>`. The CLI caches 
 
 Every write command accepts `--dry-run`. Simulates via `eth_call`, decodes custom errors, returns gas estimate. Exits 0 if would succeed, non-zero with a structured error if would revert.
 
+## Development
+
+Unit tests run on every PR via GitHub Actions:
+
+```bash
+npm test                  # vitest run
+npm run test:coverage     # with v8 coverage
+npm run lint              # eslint src
+npm run typecheck         # tsc --noEmit
+npm run build             # tsc -p tsconfig.build.json
+```
+
+Integration tests run against a forked Base mainnet via [Anvil](https://book.getfoundry.sh/anvil/) and are gated behind `workflow_dispatch` + a weekly schedule (so they don't burn RPC quota on every PR):
+
+```bash
+# Local: requires foundry installed (https://book.getfoundry.sh/getting-started/installation)
+export BASE_RPC_URL="https://base-mainnet.g.alchemy.com/v2/<KEY>"
+export BASE_FORK_BLOCK="24500000"   # optional pin for determinism
+npm run test:integration
+```
+
+In CI, set `BASE_RPC_URL` as a repo secret and (optionally) `BASE_FORK_BLOCK` as a repo variable; the `Integration` workflow consumes both.
+
 ## Claude Code skill
 
 Also available as a Claude Code skill that teaches agents how to invoke this CLI:
