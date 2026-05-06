@@ -4,6 +4,7 @@
  * via clipanion's runExit.
  */
 import { Cli, Builtins } from 'clipanion';
+import { AuthCommand } from './commands/auth.js';
 import { ClaimEmissionsCommand } from './commands/claim-emissions.js';
 import { ExtendLockCommand } from './commands/extend-lock.js';
 import { GrantAccessCommand } from './commands/grant-access.js';
@@ -11,6 +12,7 @@ import { LockCommand } from './commands/lock.js';
 import { MintPodCommand } from './commands/mint-pod.js';
 import { QueryBalanceCommand } from './commands/query/balance.js';
 import { QueryDatanetCommand } from './commands/query/datanet.js';
+import { QueryEmissionsDueCommand } from './commands/query/emissions-due.js';
 import { QueryPodCommand } from './commands/query/pod.js';
 import { QueryVotingPowerCommand } from './commands/query/voting-power.js';
 import { RegisterAgentCommand } from './commands/register-agent.js';
@@ -27,6 +29,7 @@ const cli = new Cli({
 cli.register(Builtins.HelpCommand);
 cli.register(Builtins.VersionCommand);
 
+cli.register(AuthCommand);
 cli.register(ClaimEmissionsCommand);
 cli.register(ExtendLockCommand);
 cli.register(GrantAccessCommand);
@@ -34,16 +37,16 @@ cli.register(LockCommand);
 cli.register(MintPodCommand);
 cli.register(QueryBalanceCommand);
 cli.register(QueryDatanetCommand);
+cli.register(QueryEmissionsDueCommand);
 cli.register(QueryPodCommand);
 cli.register(QueryVotingPowerCommand);
 cli.register(RegisterAgentCommand);
 cli.register(UnlockCommand);
 cli.register(VoteCommand);
 
-// TODO: register remaining 3 commands as they're implemented:
-//   query emissions-due,
-//   create-datanet (browser-only, blocked: Privy session cookie auth),
-//   swap.
+// TODO: 2 commands still pending:
+//   create-datanet (browser-only — blocked: Privy session cookie auth)
+//   swap (deferred-by-scope: Uniswap V3 multi-tx flow)
 
 // Wrap clipanion's runExit so any synchronous throw during command
 // registration / arg-parsing flows through the structured `fail()`

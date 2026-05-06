@@ -266,3 +266,19 @@ describe('register-agent', () => {
     expect(parseError(r.stderr).code).toBe('INVALID_DESCRIPTION');
   });
 });
+
+describe('auth', () => {
+  it('rejects missing private key with MISSING_PRIVATE_KEY', async () => {
+    const r = await runCli(['auth', ...JSON_FLAG]);
+    expect(r.exitCode).not.toBe(0);
+    expect(parseError(r.stderr).code).toBe('MISSING_PRIVATE_KEY');
+  });
+});
+
+describe('query emissions-due', () => {
+  it('rejects missing private key with MISSING_PRIVATE_KEY', async () => {
+    const r = await runCli(['query', 'emissions-due', ...JSON_FLAG]);
+    expect(r.exitCode).not.toBe(0);
+    expect(parseError(r.stderr).code).toBe('MISSING_PRIVATE_KEY');
+  });
+});
