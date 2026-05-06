@@ -2,7 +2,7 @@
 
 Command-line interface for [Reppo](https://reppo.ai) — mint pods, vote, lock REPPO, manage datanets. Built for **AI agents** as the primary user, but humans can use it too.
 
-> **Status:** v0.1.0-alpha. `query balance`, `query datanet`, `query pod`, `query voting-power`, `claim-emissions`, `extend-lock`, `grant-access`, `lock`, `mint-pod` (testnet), and `vote` ship in alpha. The remaining 5 commands are scaffolded but not yet wired.
+> **Status:** v0.1.0-alpha. `query balance`, `query datanet`, `query pod`, `query voting-power`, `claim-emissions`, `extend-lock`, `grant-access`, `lock`, `mint-pod` (testnet), `unlock`, and `vote` ship in alpha. The remaining 4 commands are scaffolded but not yet wired.
 
 ## Install
 
@@ -52,7 +52,7 @@ Errors **always** emit JSON on stderr regardless of mode, with a stable `code` f
 - `reppo vote --pod <id> --subnet <id> --like|--dislike` — cast an on-chain vote
 - `reppo mint-pod --datanet <id> [--token reppo|primary] [--to <addr>]` — mint a pod into a datanet (testnet only in alpha; V1 mainnet variant pending)
 - `reppo lock <amount> --duration <seconds>` — lock REPPO into veREPPO for voting power
-- `reppo unlock <lockupId>` *(planned)*
+- `reppo unlock <lockupId> [--to <addr>]` — withdraw an expired veREPPO lockup, returning the locked REPPO
 - `reppo extend-lock <lockupId> --duration <seconds>` — extend an existing veREPPO lockup
 - `reppo grant-access --datanet <id> [--to <addr>]` — pay the REPPO access fee and grant `--to` access to a datanet
 - `reppo claim-emissions --pod <id> --epoch <n>` — claim a pod's emissions for an epoch
