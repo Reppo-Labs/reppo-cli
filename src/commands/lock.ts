@@ -114,13 +114,14 @@ export class LockCommand extends BaseCommand {
       const reppo = reppoToken(cfg.network);
 
       // Pre-flight in parallel: 5 reads → 1 round-trip.
-      const [minDur, maxDur, balance, allowance, previewPower] = await Promise.all([
+      const [minDur, maxDur, balance, allowance, preview] = await Promise.all([
         clients.publicClient.readContract({ address: vr.address, abi: vr.abi, functionName: 'minStakeDuration', args: [] }),
         clients.publicClient.readContract({ address: vr.address, abi: vr.abi, functionName: 'maxStakeDuration', args: [] }),
         clients.publicClient.readContract({ address: reppo.address, abi: reppo.abi, functionName: 'balanceOf', args: [clients.account.address] }),
         clients.publicClient.readContract({ address: reppo.address, abi: reppo.abi, functionName: 'allowance', args: [clients.account.address, vr.address] }),
         clients.publicClient.readContract({ address: vr.address, abi: vr.abi, functionName: 'previewPoints', args: [amount, duration] }),
       ]);
+      const [previewPower, previewEnd] = preview;
 
       if (duration < minDur || duration > maxDur) {
         throw cliError(
@@ -162,6 +163,7 @@ export class LockCommand extends BaseCommand {
           duration: duration.toString(),
           predictedLockupId: sim.result.toString(),
           votingPowerGained: { raw: previewPower.toString(), formatted: formatUnits(previewPower, 18) },
+          predictedExpiresAt: previewEnd.toString(),
           gas: sim.request.gas?.toString() ?? null,
         });
         return 0;
@@ -197,6 +199,7 @@ export class LockCommand extends BaseCommand {
         amount: { raw: amount.toString(), formatted: formatUnits(amount, 18) },
         duration: duration.toString(),
         votingPowerGained: { raw: previewPower.toString(), formatted: formatUnits(previewPower, 18) },
+        expiresAt: previewEnd.toString(),
         block: receipt.blockNumber.toString(),
         basescanUrl: cfg.network === 'mainnet'
           ? `https://basescan.org/tx/${tx}`

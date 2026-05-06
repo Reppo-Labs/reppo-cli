@@ -13,6 +13,7 @@ import { QueryBalanceCommand } from './commands/query/balance.js';
 import { QueryDatanetCommand } from './commands/query/datanet.js';
 import { QueryPodCommand } from './commands/query/pod.js';
 import { QueryVotingPowerCommand } from './commands/query/voting-power.js';
+import { UnlockCommand } from './commands/unlock.js';
 import { VoteCommand } from './commands/vote.js';
 
 const cli = new Cli({
@@ -34,11 +35,11 @@ cli.register(QueryBalanceCommand);
 cli.register(QueryDatanetCommand);
 cli.register(QueryPodCommand);
 cli.register(QueryVotingPowerCommand);
+cli.register(UnlockCommand);
 cli.register(VoteCommand);
 
-// TODO: register remaining 5 commands as they're implemented:
+// TODO: register remaining 4 commands as they're implemented:
 //   query emissions-due,
-//   unlock,
 //   create-datanet, register-agent, swap.
 
 // Wrap clipanion's runExit so any synchronous throw during command
