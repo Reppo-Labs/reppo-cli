@@ -18,14 +18,29 @@ import { cliError } from '../output/format.js';
 import { getSession, saveSession, type SessionEntry } from '../state/db.js';
 import type { Network } from '../chain/addresses.js';
 
-/**
- * Default base URL for the wallet-auth platform API. Resolved from
- * `cfg.apiUrl` (env REPPO_API_URL) when available; falls back to the
- * mainnet default if `cfg.apiUrl` is undefined.
- */
-const DEFAULT_PLATFORM_API = 'https://api.reppo.xyz';
-
 const SESSION_KEY = 'reppo-platform' as const;
+
+/**
+ * Resolve the platform-API base URL or throw PLATFORM_API_NOT_CONFIGURED.
+ *
+ * `cfg.apiUrl` is defaulted to https://api.reppo.xyz on mainnet by
+ * `config/load.ts`. On testnet it is intentionally undefined (no stable
+ * hosted endpoint), so reaching this helper with `apiUrl=undefined`
+ * means the caller is on testnet without `REPPO_API_URL` set. Falling
+ * back to mainnet here would silently sign in / query against mainnet
+ * and cache the resulting token under the `testnet:reppo-platform`
+ * session key — the silent-wrong-network class of bug. Fail loud.
+ */
+function requireApiUrl(apiUrl: string | undefined): string {
+  if (!apiUrl) {
+    throw cliError(
+      'PLATFORM_API_NOT_CONFIGURED',
+      'No platform API URL configured for this network.',
+      'Mainnet defaults to https://api.reppo.xyz. On testnet, set REPPO_API_URL to your platform API endpoint.',
+    );
+  }
+  return apiUrl;
+}
 
 /**
  * Re-authenticate with the platform API: hit /auth/nonce, sign the
@@ -137,7 +152,7 @@ export async function getOrRefreshSession(
   apiUrl: string | undefined,
   privateKey: `0x${string}`,
 ): Promise<SessionEntry> {
-  const url = apiUrl ?? DEFAULT_PLATFORM_API;
+  const url = requireApiUrl(apiUrl);
   const account = privateKeyToAccount(privateKey);
 
   const cached = await getSession(network, SESSION_KEY);
@@ -161,7 +176,7 @@ export async function platformGet<T>(
   path: string,
   token: string,
 ): Promise<T> {
-  const baseUrl = (apiUrl ?? DEFAULT_PLATFORM_API).replace(/\/+$/, '');
+  const baseUrl = requireApiUrl(apiUrl).replace(/\/+$/, '');
   const url = `${baseUrl}${path}`;
 
   let response: Response;

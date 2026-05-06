@@ -58,8 +58,14 @@ export class AuthCommand extends BaseCommand {
       if (this.force) {
         // Bypass cache: sign fresh, save fresh, emit.
         const account = privateKeyToAccount(pk);
-        const apiUrl = cfg.apiUrl ?? 'https://api.reppo.xyz';
-        const fresh = await signInWithEthereum(apiUrl, account);
+        if (!cfg.apiUrl) {
+          throw cliError(
+            'PLATFORM_API_NOT_CONFIGURED',
+            'No platform API URL configured for this network.',
+            'Mainnet defaults to https://api.reppo.xyz. On testnet, set REPPO_API_URL to your platform API endpoint.',
+          );
+        }
+        const fresh = await signInWithEthereum(cfg.apiUrl, account);
         await saveSession(cfg.network, SESSION_KEY, fresh);
         return this.emitSession(fresh, /*refreshed=*/true);
       }
