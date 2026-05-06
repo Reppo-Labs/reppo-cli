@@ -4,6 +4,30 @@ Command-line interface for [Reppo](https://reppo.ai) on Base. TypeScript ESM CLI
 
 Read this first when picking up the project. It's the durable map; commit history has the changes.
 
+## Commands
+
+```bash
+npm run dev          # tsx src/bin.ts <args>     — run CLI in dev mode
+npm run lint         # eslint src --max-warnings 0
+npm run typecheck    # tsc --noEmit
+npm test             # vitest run
+npm run test:coverage
+npm run build        # tsc -p tsconfig.build.json — emits dist/bin.js
+```
+
+`prepublishOnly` runs lint → typecheck → test → build. CI runs the same matrix on Node 20+22 × Ubuntu+macOS.
+
+## Env vars (read by `src/config/load.ts`)
+
+| Var | When |
+|---|---|
+| `REPPO_PRIVATE_KEY` | All write commands |
+| `REPPO_VOTER_PRIVATE_KEY` | `vote` only (separate from publisher EOA) |
+| `REPPO_NETWORK` | `mainnet` (default) or `testnet` |
+| `REPPO_RPC_URL` | Override RPC endpoint |
+| `REPPO_API_URL` / `REPPO_API_KEY` | Reserved for `register-agent` / `create-datanet` (not yet implemented) |
+| `REPPO_STATE_PATH` | Override `~/.reppo/cli-state.json` (used in tests) |
+
 ## Project shape
 
 ```
@@ -11,11 +35,17 @@ src/
   bin.ts                       # entry point — registers every command
   commands/
     _base.ts                   # BaseCommand (--network, --json, --rpc-url, loadConfig, handleError)
-    vote.ts                    # canonical write command (post-#9 patterns)
+    vote.ts                    # canonical write command (peekIdempotent + two-phase)
+    extend-lock.ts             # write — extend a veREPPO lockup
+    grant-access.ts            # write — pay REPPO fee, grant datanet access
+    lock.ts                    # write — stake REPPO into veREPPO
+    mint-pod.ts                # write — V2 testnet only (V1 mainnet pending)
+    claim-emissions.ts         # write — claim pod emissions for an epoch
     query/
       balance.ts               # canonical read command (uses tryX helpers)
-      voting-power.ts          # PR #11
-      subnet.ts                # PR #12
+      datanet.ts               # validity + REPPO fee + caller-access
+      pod.ts                   # ownerOf, exists/owner
+      voting-power.ts          # votingPowerOf + lockupCount
   chain/
     abis.ts                    # parseAbi'd ABIs — V1/V2 PodManager split
     addresses.ts               # pinned addresses per network; TBD placeholders
@@ -27,13 +57,13 @@ src/
   state/
     db.ts                      # ~/.reppo/cli-state.json (proper-lockfile-serialized)
     idempotency.ts             # peekIdempotent + two-phase write protocol
-test/
-  integration/                 # anvil-fork tests, gated behind workflow_dispatch
+# Unit tests are colocated as src/**/*.test.ts (vitest auto-discovers).
+# An anvil-fork integration suite is on PR #8 (RPC-secret-blocked); not on main.
 .claude/                       # automations — see below
 .mcp.json                      # team-shared MCP servers (context7, github)
 ```
 
-## Canonical patterns (post-PR #9)
+## Canonical patterns
 
 When writing a new command, ALWAYS:
 
@@ -82,7 +112,9 @@ Match on `code`, never on `message`. Codes are stable; messages can drift.
 
 ## Reference
 
-- **Issue #5** — the 13-commands epic; tracks remaining unimplemented commands.
+- **Issue #5** — the 13-commands epic. 8/13 shipped; the 5 blocked (`unlock` — no withdraw ABI; `create-datanet` + `register-agent` — need platform API spec; `query emissions-due` — needs pod enumeration; `swap` — Uniswap V3 multi-tx scope) are documented in [issue #5 comments](https://github.com/Reppo-Labs/reppo-cli/issues/5).
 - **README.md** — user-facing CLI docs; status line lists what's actually shipped.
 - **`src/chain/abis.ts:5-10`** — comment explaining the V1/V2 split.
 - **`src/state/idempotency.ts`** — top-of-file comment is the protocol spec.
+- **`src/commands/vote.ts`** — canonical write command; reference for new write implementations.
+- **`src/commands/query/balance.ts`** — canonical read command; reference for new read implementations.
