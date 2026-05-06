@@ -2,7 +2,7 @@
 
 Command-line interface for [Reppo](https://reppo.ai) — mint pods, vote, lock REPPO, manage datanets. Built for **AI agents** as the primary user, but humans can use it too.
 
-> **Status:** v0.1.0-alpha. `query balance`, `query datanet`, `query pod`, `extend-lock`, `grant-access`, `lock`, `mint-pod` (testnet), and `vote` ship in alpha. The remaining 7 commands are scaffolded but not yet wired.
+> **Status:** v0.1.0-alpha. `query balance`, `query datanet`, `query pod`, `claim-emissions`, `extend-lock`, `grant-access`, `lock`, `mint-pod` (testnet), and `vote` ship in alpha. The remaining 6 commands are scaffolded but not yet wired.
 
 ## Install
 
@@ -55,7 +55,7 @@ Errors **always** emit JSON on stderr regardless of mode, with a stable `code` f
 - `reppo unlock <lockupId>` *(planned)*
 - `reppo extend-lock <lockupId> --duration <seconds>` — extend an existing veREPPO lockup
 - `reppo grant-access --datanet <id> [--to <addr>]` — pay the REPPO access fee and grant `--to` access to a datanet
-- `reppo claim-emissions --pod <id> [--epoch <n>]` *(planned)*
+- `reppo claim-emissions --pod <id> --epoch <n>` — claim a pod's emissions for an epoch
 - `reppo create-datanet --name <s> --token <addr> --fee <reppo>` *(planned)*
 - `reppo register-agent --name <s> --description <s>` *(planned)*
 - `reppo swap <from> <to> --amount <n>` *(planned, mainnet only)*

@@ -4,6 +4,7 @@
  * via clipanion's runExit.
  */
 import { Cli, Builtins } from 'clipanion';
+import { ClaimEmissionsCommand } from './commands/claim-emissions.js';
 import { ExtendLockCommand } from './commands/extend-lock.js';
 import { GrantAccessCommand } from './commands/grant-access.js';
 import { LockCommand } from './commands/lock.js';
@@ -23,6 +24,7 @@ const cli = new Cli({
 cli.register(Builtins.HelpCommand);
 cli.register(Builtins.VersionCommand);
 
+cli.register(ClaimEmissionsCommand);
 cli.register(ExtendLockCommand);
 cli.register(GrantAccessCommand);
 cli.register(LockCommand);
@@ -32,9 +34,8 @@ cli.register(QueryDatanetCommand);
 cli.register(QueryPodCommand);
 cli.register(VoteCommand);
 
-// TODO: register remaining 7 commands as they're implemented:
+// TODO: register remaining 6 commands as they're implemented:
 //   query voting-power, query emissions-due,
-//   claim-emissions,
 //   unlock,
 //   create-datanet, register-agent, swap.
 
