@@ -266,3 +266,41 @@ describe('register-agent', () => {
     expect(parseError(r.stderr).code).toBe('INVALID_DESCRIPTION');
   });
 });
+
+describe('auth', () => {
+  it('rejects missing private key with MISSING_PRIVATE_KEY', async () => {
+    const r = await runCli(['auth', ...JSON_FLAG]);
+    expect(r.exitCode).not.toBe(0);
+    expect(parseError(r.stderr).code).toBe('MISSING_PRIVATE_KEY');
+  });
+
+  it('rejects testnet without REPPO_API_URL with PLATFORM_API_NOT_CONFIGURED', async () => {
+    // Guards the silent-mainnet-fallback bug: testnet has no default
+    // platform endpoint, so auth must fail loud rather than silently
+    // signing in against api.reppo.xyz and caching a mainnet token
+    // under the testnet:reppo-platform session key.
+    const r = await runCli(['auth', '--force', ...JSON_FLAG], {
+      REPPO_PRIVATE_KEY: FAKE_PK,
+      REPPO_NETWORK: 'testnet',
+    });
+    expect(r.exitCode).not.toBe(0);
+    expect(parseError(r.stderr).code).toBe('PLATFORM_API_NOT_CONFIGURED');
+  });
+});
+
+describe('query emissions-due', () => {
+  it('rejects missing private key with MISSING_PRIVATE_KEY', async () => {
+    const r = await runCli(['query', 'emissions-due', ...JSON_FLAG]);
+    expect(r.exitCode).not.toBe(0);
+    expect(parseError(r.stderr).code).toBe('MISSING_PRIVATE_KEY');
+  });
+
+  it('rejects testnet without REPPO_API_URL with PLATFORM_API_NOT_CONFIGURED', async () => {
+    const r = await runCli(['query', 'emissions-due', ...JSON_FLAG], {
+      REPPO_PRIVATE_KEY: FAKE_PK,
+      REPPO_NETWORK: 'testnet',
+    });
+    expect(r.exitCode).not.toBe(0);
+    expect(parseError(r.stderr).code).toBe('PLATFORM_API_NOT_CONFIGURED');
+  });
+});

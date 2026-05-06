@@ -2,7 +2,7 @@
 
 Command-line interface for [Reppo](https://reppo.ai) — mint pods, vote, lock REPPO, manage datanets. Built for **AI agents** as the primary user, but humans can use it too.
 
-> **Status:** v0.1.0-alpha. `query balance`, `query datanet`, `query pod`, `query voting-power`, `claim-emissions`, `extend-lock`, `grant-access`, `lock`, `mint-pod`, `register-agent`, `unlock`, and `vote` ship in alpha. The remaining 3 commands are scaffolded but not yet wired.
+> **Status:** v0.1.0-alpha. `auth`, `query balance`, `query datanet`, `query emissions-due`, `query pod`, `query voting-power`, `claim-emissions`, `extend-lock`, `grant-access`, `lock`, `mint-pod`, `register-agent`, `unlock`, and `vote` ship in alpha. The remaining 2 commands (`create-datanet`, `swap`) are scaffolded but not yet wired.
 
 ## Install
 
@@ -45,7 +45,7 @@ Errors **always** emit JSON on stderr regardless of mode, with a stable `code` f
 - `reppo query voting-power [address]` — veREPPO voting power + lockup count
 - `reppo query pod <podId>` — pod existence + owner address
 - `reppo query datanet <datanetId> [--for <addr>]` — validity + REPPO access fee, optionally check access for an address
-- `reppo query emissions-due [address]` *(planned)*
+- `reppo query emissions-due` — list unclaimed REPPO emissions across all pods owned by the configured wallet (uses platform API)
 
 ### Write
 
@@ -56,8 +56,9 @@ Errors **always** emit JSON on stderr regardless of mode, with a stable `code` f
 - `reppo extend-lock <lockupId> --duration <seconds>` — extend an existing veREPPO lockup
 - `reppo grant-access --datanet <id> [--to <addr>]` — pay the REPPO access fee and grant `--to` access to a datanet
 - `reppo claim-emissions --pod <id> --epoch <n>` — claim a pod's emissions for an epoch
-- `reppo create-datanet --name <s> --token <addr> --fee <reppo>` *(planned)*
-- `reppo register-agent --name <s> --description <s>` — register a new agent identity on the Reppo platform; returns id + accessToken + funded Base wallet address
+- `reppo register-agent --name <s> --description <s>` — register a new agent identity on the Reppo platform; returns id + accessToken + a server-provisioned (unfunded) Base wallet address. Send ETH + REPPO to it before on-chain mints.
+- `reppo auth [--force]` — sign in to the platform API (api.reppo.xyz); caches a 24h Bearer token used by `query emissions-due` and other platform-API commands
+- `reppo create-datanet ...` *(planned — currently dashboard-only; the REST endpoint requires a Privy session cookie which is browser auth)*
 - `reppo swap <from> <to> --amount <n>` *(planned, mainnet only)*
 
 ## Idempotency

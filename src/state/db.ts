@@ -40,10 +40,17 @@ export interface IdempotencyEntry {
   updatedAt: number;
 }
 
-interface SessionEntry {
-  agentId: string;
+export interface SessionEntry {
+  /** Optional — only set for /api/v1/agents/* persistent tokens. */
+  agentId?: string;
   accessToken: string;
   walletAddress: string | null;
+  /**
+   * Optional — set for api.reppo.xyz wallet-auth sessions (24h tokens).
+   * Epoch ms. Callers should treat the session as expired when
+   * Date.now() >= expiresAt.
+   */
+  expiresAt?: number;
   createdAt: number;
 }
 
