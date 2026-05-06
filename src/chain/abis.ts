@@ -1,8 +1,10 @@
 /**
- * Minimal ABIs for the Reppo contract surface the CLI touches. Mainnet uses
- * the V1 PodManager (`mintPod(to, emissionShare)`); testnet uses the V2
- * PodManager (`mintPodWithREPPO(to, subnetId)`). Voting + ve-token + subnet
- * access ABIs are shared.
+ * Minimal ABIs for the Reppo contract surface the CLI touches. Mainnet
+ * is the canonical PodManager (`mintPod(to, emissionShare)`); testnet
+ * is a fork of mainnet with subnet/datanet logic added for a client
+ * experiment (`mintPodWithREPPO(to, subnetId)` /
+ * `mintPodWithPrimaryToken(to, subnetId)`). Same method family, different
+ * parameters. Voting + ve-token + subnet access ABIs are shared.
  */
 import { parseAbi } from 'viem';
 

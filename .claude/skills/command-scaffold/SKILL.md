@@ -67,7 +67,7 @@ All new commands MUST use:
 - **`valid: boolean | { unavailable }`** over-typing: if the unavailable case takes an early return, type the variable as plain `boolean`. TypeScript will complain about a `never` branch otherwise.
 - **`getAccessFeeREPPO(invalidId)`** reverts: skip the fee read if `validSubnet` returned false.
 - **Decimals**: REPPO and veReppo are 18; USDC is 6. ABIs may share `balanceOf`, but the formatter must use the right decimals.
-- **V1/V2 PodManager split**: mainnet uses `mintPod(to, share)`, testnet uses `mintPodWithREPPO(to, subnetId)`. `tryPodManager()` returns the right ABI for the network — never paste a function name without checking which ABI is returned.
+- **mainnet vs testnet PodManager param variant**: mainnet uses `mintPod(to, share)` (canonical production), testnet uses `mintPodWithREPPO(to, subnetId)` (forked, subnet logic added for a client). Same method family, different parameters. `tryPodManager()` returns the right ABI for the network — never paste a function name without checking which ABI is returned.
 
 ## Templates
 

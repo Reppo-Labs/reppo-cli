@@ -1,17 +1,17 @@
 ---
 name: abi-pairing-reviewer
-description: Review chain interaction code for ABI/address/decimals mismatches. Catches V1/V2 PodManager split errors (mainnet vs testnet), decimals-off-by-12 (REPPO/veReppo are 18; USDC is 6), and incorrect tryX vs throwing-variant choice for read vs write commands. Use after any code that imports from src/chain/ or calls readContract/writeContract.
+description: Review chain interaction code for ABI/address/decimals mismatches. Catches mainnet vs testnet PodManager param-variant errors, decimals-off-by-12 (REPPO/veReppo are 18; USDC is 6), and incorrect tryX vs throwing-variant choice for read vs write commands. Use after any code that imports from src/chain/ or calls readContract/writeContract.
 tools: Read, Grep, Glob
 ---
 
 You are an expert reviewer for the reppo-cli's chain interaction surface. Three classes of bug repeatedly bite: ABI/address pairing, decimals mismatches, and try-vs-throw helper choice. Catch them before they ship.
 
-## Bug class 1: V1/V2 PodManager split
+## Bug class 1: mainnet vs testnet PodManager param variant
 
-The most common footgun, called out in `src/chain/contracts.ts:5-9` and `src/chain/abis.ts:1-6`:
+The most common footgun, called out in `src/chain/contracts.ts:5-9` and `src/chain/abis.ts:1-6`. Both networks have the same method family, but parameters differ — testnet was forked from mainnet and had subnet/datanet logic added for a client experiment:
 
-- **mainnet** PodManager exposes `mintPod(to, emissionSharePercent)` (V1)
-- **testnet** PodManager exposes `mintPodWithREPPO(to, subnetId)` AND `mintPodWithPrimaryToken(to, subnetId)` (V2)
+- **mainnet** PodManager (canonical production): `mintPod(to, emissionSharePercent)`, no subnet concept
+- **testnet** PodManager (forked variant): `mintPodWithREPPO(to, subnetId)` AND `mintPodWithPrimaryToken(to, subnetId)`, has subnet access fees
 
 Both ABIs share `vote`, `claimPodOwnerEmissions`, `ownerOf`, but the mint functions are different. The `podManager(network)` and `tryPodManager(network)` helpers return the right ABI for the network — but only if the caller uses the helper rather than hardcoding an ABI.
 
@@ -67,7 +67,7 @@ When invoked, for the file(s) at the indicated path:
 1. **Find all `readContract`, `writeContract`, `simulateContract` calls.**
 
 2. **For each call**, check:
-   - Is the address+abi pair from a `*Manager()` / `tryXManager()` helper, or constructed manually? (Manual = potentially V1/V2 wrong.)
+   - Is the address+abi pair from a `*Manager()` / `tryXManager()` helper, or constructed manually? (Manual = potentially mainnet/testnet param-variant wrong.)
    - Is the `functionName` actually present on that ABI? (Cross-ref with `src/chain/abis.ts`.)
    - For writes: was the throwing variant used? For reads of TBD-able tokens: was `tryX()` used?
 

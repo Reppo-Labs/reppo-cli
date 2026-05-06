@@ -7,7 +7,7 @@
  * an alpha read command that's an acceptable trade-off versus introspecting
  * the revert reason. (Real bugs surface as RPC errors elsewhere.)
  *
- * The mainnet PodManager (V1) and testnet PodManager (V2) share the
+ * The mainnet PodManager and testnet PodManager (forked variant) share the
  * `ownerOf` selector, so this command works on both networks via
  * `tryPodManager(network)` — viem pairs the right ABI with the right
  * address automatically.

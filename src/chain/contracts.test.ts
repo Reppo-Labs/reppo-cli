@@ -9,7 +9,7 @@ import {
 
 describe('tryX() non-throwing contract helpers', () => {
   describe('mainnet', () => {
-    it('tryPodManager returns the V1 ABI bound to the mainnet address', () => {
+    it('tryPodManager returns the mainnet ABI bound to the mainnet address', () => {
       const c = tryPodManager('mainnet');
       expect(c).not.toBeNull();
       expect(c?.address).toBe('0xcfF0511089D0Fbe92E1788E4aFFF3E7930b3D47c');
@@ -34,7 +34,7 @@ describe('tryX() non-throwing contract helpers', () => {
   });
 
   describe('testnet', () => {
-    it('tryPodManager returns the V2 ABI', () => {
+    it('tryPodManager returns the testnet ABI', () => {
       const c = tryPodManager('testnet');
       expect(c?.address).toBe('0x113CcFEcdc8Fb1662fCebd195D9573D1c5e5DFD3');
     });
