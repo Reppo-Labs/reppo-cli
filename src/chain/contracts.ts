@@ -1,7 +1,7 @@
 /**
  * Network-aware contract resolver. Returns `{ address, abi }` for each
  * contract so callers can't accidentally pair the wrong ABI with the
- * wrong address (the V1 vs V2 PodManager split is the most common
+ * wrong address (the mainnet vs testnet PodManager param variant is the most common
  * footgun: mainnet uses `mintPod(to, share)` while testnet uses
  * `mintPodWithREPPO(to, subnetId)`).
  *

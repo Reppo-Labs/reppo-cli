@@ -120,7 +120,7 @@ export class ClaimEmissionsCommand extends BaseCommand {
       }
 
       // Mainnet-only pre-flight: claim status + amount due.
-      // Testnet's PodManager ABI doesn't expose these views (V2 ABI is leaner).
+      // Testnet's PodManager ABI doesn't expose these views (the testnet fork is leaner).
       let amountDue: bigint | null = null;
       if (cfg.network === 'mainnet') {
         const [alreadyClaimed, due] = await Promise.all([

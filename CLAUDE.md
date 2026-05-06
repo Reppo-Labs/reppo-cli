@@ -39,7 +39,7 @@ src/
     extend-lock.ts             # write — extend a veREPPO lockup
     grant-access.ts            # write — pay REPPO fee, grant datanet access
     lock.ts                    # write — stake REPPO into veREPPO
-    mint-pod.ts                # write — V2 testnet only (V1 mainnet pending)
+    mint-pod.ts                # write — branches on network (--share mainnet, --datanet testnet)
     claim-emissions.ts         # write — claim pod emissions for an epoch
     query/
       balance.ts               # canonical read command (uses tryX helpers)
@@ -47,7 +47,7 @@ src/
       pod.ts                   # ownerOf, exists/owner
       voting-power.ts          # votingPowerOf + lockupCount
   chain/
-    abis.ts                    # parseAbi'd ABIs — V1/V2 PodManager split
+    abis.ts                    # parseAbi'd ABIs — mainnet vs testnet PodManager param-variant
     addresses.ts               # pinned addresses per network; TBD placeholders
     contracts.ts               # throwing + tryX() helpers
     clients.ts                 # viem public + wallet client factories
@@ -87,7 +87,7 @@ When writing a new command, ALWAYS:
 
 Three classes have produced production bugs:
 
-- **V1/V2 PodManager split** — mainnet uses `mintPod(to, share)`, testnet uses `mintPodWithREPPO(to, subnetId)`. Use the helpers; never hardcode the ABI.
+- **mainnet vs testnet PodManager param-variant** — mainnet uses `mintPod(to, share)` (canonical production); testnet uses `mintPodWithREPPO(to, subnetId)` (forked from mainnet, subnet logic added for a client experiment). Same method family, different parameters. Use the helpers; never hardcode the ABI.
 - **Decimals** — REPPO/veReppo/ETH are 18; USDC is 6. Mismatch silently shows wrong values.
 - **Idempotency two-phase ordering** — past commits `6b9a227` and `091e45a` were both bugs here. The `markSubmitted-before-receipt-wait` invariant is the load-bearing one.
 
@@ -114,7 +114,7 @@ Match on `code`, never on `message`. Codes are stable; messages can drift.
 
 - **Issue #5** — the 13-commands epic. 8/13 shipped; the 5 blocked (`unlock` — no withdraw ABI; `create-datanet` + `register-agent` — need platform API spec; `query emissions-due` — needs pod enumeration; `swap` — Uniswap V3 multi-tx scope) are documented in [issue #5 comments](https://github.com/Reppo-Labs/reppo-cli/issues/5).
 - **README.md** — user-facing CLI docs; status line lists what's actually shipped.
-- **`src/chain/abis.ts:5-10`** — comment explaining the V1/V2 split.
+- **`src/chain/abis.ts:5-10`** — comment explaining the mainnet vs testnet param variant.
 - **`src/state/idempotency.ts`** — top-of-file comment is the protocol spec.
 - **`src/commands/vote.ts`** — canonical write command; reference for new write implementations.
 - **`src/commands/query/balance.ts`** — canonical read command; reference for new read implementations.

@@ -172,10 +172,22 @@ describe('claim-emissions', () => {
 });
 
 describe('mint-pod', () => {
-  it('rejects mainnet (V1 unimplemented) with NETWORK_NOT_SUPPORTED', async () => {
-    const r = await runCli(['mint-pod', '--datanet', '19', ...JSON_FLAG], { REPPO_PRIVATE_KEY: FAKE_PK, REPPO_NETWORK: 'mainnet' });
+  it('rejects mainnet without --share with MISSING_SHARE', async () => {
+    const r = await runCli(['mint-pod', ...JSON_FLAG], { REPPO_PRIVATE_KEY: FAKE_PK, REPPO_NETWORK: 'mainnet' });
     expect(r.exitCode).not.toBe(0);
-    expect(parseError(r.stderr).code).toBe('NETWORK_NOT_SUPPORTED');
+    expect(parseError(r.stderr).code).toBe('MISSING_SHARE');
+  });
+
+  it('rejects out-of-range --share with INVALID_SHARE', async () => {
+    const r = await runCli(['mint-pod', '--share', '150', ...JSON_FLAG], { REPPO_PRIVATE_KEY: FAKE_PK, REPPO_NETWORK: 'mainnet' });
+    expect(r.exitCode).not.toBe(0);
+    expect(parseError(r.stderr).code).toBe('INVALID_SHARE');
+  });
+
+  it('rejects testnet without --datanet with MISSING_DATANET', async () => {
+    const r = await runCli(['mint-pod', ...JSON_FLAG], { REPPO_PRIVATE_KEY: FAKE_PK, REPPO_NETWORK: 'testnet' });
+    expect(r.exitCode).not.toBe(0);
+    expect(parseError(r.stderr).code).toBe('MISSING_DATANET');
   });
 
   it('rejects unknown --token with INVALID_TOKEN', async () => {
