@@ -252,3 +252,17 @@ describe('query pod', () => {
     expect(parseError(r.stderr).code).toBe('INVALID_POD_ID');
   });
 });
+
+describe('register-agent', () => {
+  it('rejects empty --name with INVALID_NAME', async () => {
+    const r = await runCli(['register-agent', '--name', '', '--description', 'test', ...JSON_FLAG]);
+    expect(r.exitCode).not.toBe(0);
+    expect(parseError(r.stderr).code).toBe('INVALID_NAME');
+  });
+
+  it('rejects whitespace-only --description with INVALID_DESCRIPTION', async () => {
+    const r = await runCli(['register-agent', '--name', 'test', '--description', '   ', ...JSON_FLAG]);
+    expect(r.exitCode).not.toBe(0);
+    expect(parseError(r.stderr).code).toBe('INVALID_DESCRIPTION');
+  });
+});

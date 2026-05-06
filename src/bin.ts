@@ -13,6 +13,7 @@ import { QueryBalanceCommand } from './commands/query/balance.js';
 import { QueryDatanetCommand } from './commands/query/datanet.js';
 import { QueryPodCommand } from './commands/query/pod.js';
 import { QueryVotingPowerCommand } from './commands/query/voting-power.js';
+import { RegisterAgentCommand } from './commands/register-agent.js';
 import { UnlockCommand } from './commands/unlock.js';
 import { VoteCommand } from './commands/vote.js';
 
@@ -35,12 +36,14 @@ cli.register(QueryBalanceCommand);
 cli.register(QueryDatanetCommand);
 cli.register(QueryPodCommand);
 cli.register(QueryVotingPowerCommand);
+cli.register(RegisterAgentCommand);
 cli.register(UnlockCommand);
 cli.register(VoteCommand);
 
-// TODO: register remaining 4 commands as they're implemented:
+// TODO: register remaining 3 commands as they're implemented:
 //   query emissions-due,
-//   create-datanet, register-agent, swap.
+//   create-datanet (browser-only, blocked: Privy session cookie auth),
+//   swap.
 
 // Wrap clipanion's runExit so any synchronous throw during command
 // registration / arg-parsing flows through the structured `fail()`
