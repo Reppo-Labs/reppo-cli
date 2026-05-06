@@ -12,6 +12,7 @@ import { MintPodCommand } from './commands/mint-pod.js';
 import { QueryBalanceCommand } from './commands/query/balance.js';
 import { QueryDatanetCommand } from './commands/query/datanet.js';
 import { QueryPodCommand } from './commands/query/pod.js';
+import { QueryVotingPowerCommand } from './commands/query/voting-power.js';
 import { VoteCommand } from './commands/vote.js';
 
 const cli = new Cli({
@@ -32,10 +33,11 @@ cli.register(MintPodCommand);
 cli.register(QueryBalanceCommand);
 cli.register(QueryDatanetCommand);
 cli.register(QueryPodCommand);
+cli.register(QueryVotingPowerCommand);
 cli.register(VoteCommand);
 
-// TODO: register remaining 6 commands as they're implemented:
-//   query voting-power, query emissions-due,
+// TODO: register remaining 5 commands as they're implemented:
+//   query emissions-due,
 //   unlock,
 //   create-datanet, register-agent, swap.
 
