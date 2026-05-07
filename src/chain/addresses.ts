@@ -5,6 +5,7 @@
  * silently sending to 0x0.
  */
 import type { Address } from 'viem';
+import { cliError } from '../output/format.js';
 
 export type Network = 'mainnet' | 'testnet';
 
@@ -55,15 +56,11 @@ export function getAddresses(network: Network): AddressBundle {
  */
 export function requireAddress(addr: Address, label: string): Address {
   if (addr === TBD) {
-    throw Object.assign(
-      new Error(
-        `${label} address is not configured for this network yet. ` +
+    throw cliError(
+      'ADDRESS_NOT_CONFIGURED',
+      `${label} address is not configured for this network yet. ` +
         `Edit src/chain/addresses.ts once Reppo publishes it.`,
-      ),
-      {
-        code: 'ADDRESS_NOT_CONFIGURED',
-        hint: `${label} has no address baked in for the selected network. Switch networks with --network, or wait for the address to be published.`,
-      },
+      `${label} has no address baked in for the selected network. Switch networks with --network, or wait for the address to be published.`,
     );
   }
   return addr;

@@ -1,7 +1,11 @@
 /**
- * Per-network viem client factory. Wraps writeContract through a tx-lock
- * mutex so concurrent commands using the same EOA don't collide on nonces
- * (carried over from reppo-x-agent's chain.ts pattern).
+ * Per-network viem client factory.
+ *
+ * Single-process CLI: each invocation runs one command, so we don't need
+ * an in-process tx mutex. Self-collision is prevented by always reading
+ * the next nonce with `blockTag: 'pending'` (see `nextNonce`). If the CLI
+ * ever grows a multi-command-per-process driver, reintroduce a mutex
+ * around `writeContract` then.
  *
  * NOTE: viem's PublicClient/WalletClient generic signatures drift across
  * minor versions and across `viem/chains` re-exports. Returning the
@@ -34,14 +38,6 @@ export interface Clients {
   account: ReturnType<typeof privateKeyToAccount>;
   publicClient: ReadClient;
   walletClient: SignerClient;
-}
-
-let _txLock: Promise<void> = Promise.resolve();
-export function withTxLock<T>(fn: () => Promise<T>): Promise<T> {
-  const prev = _txLock;
-  let release: () => void;
-  _txLock = new Promise<void>((r) => { release = r; });
-  return prev.then(fn).finally(() => release!());
 }
 
 export function createClients(opts: {

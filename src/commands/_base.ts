@@ -8,7 +8,7 @@
  * Subclasses implement run() and call this.exit() on success.
  */
 import { Command, Option } from 'clipanion';
-import { setOutputMode, fail } from '../output/format.js';
+import { setOutputMode, fail, cliError } from '../output/format.js';
 import { loadConfig, type Config } from '../config/load.js';
 import type { Network } from '../chain/addresses.js';
 
@@ -23,7 +23,10 @@ export abstract class BaseCommand extends Command {
     if (this.network === 'mainnet' || this.network === 'testnet') {
       overrides.network = this.network;
     } else if (this.network) {
-      throw new Error(`--network must be "mainnet" or "testnet", got "${this.network}"`);
+      throw cliError(
+        'INVALID_NETWORK',
+        `--network must be "mainnet" or "testnet", got "${this.network}"`,
+      );
     }
     const cfg = loadConfig(overrides);
     if (this.rpcUrl) cfg.rpcUrl = this.rpcUrl;

@@ -101,6 +101,29 @@ describe('db: upsertIdempotent allowed-transition guards', () => {
     ).rejects.toMatchObject({ code: 'IDEMPOTENCY_ARGS_MISMATCH' });
   });
 
+  it('does not crash on legacy entries with no argsFingerprint (still raises ARGS_MISMATCH)', async () => {
+    // Inject a pre-v0.2 entry directly into the state file (writing
+    // through upsertIdempotent always produces a valid fingerprint).
+    const path = process.env.REPPO_STATE_PATH!;
+    const { mkdirSync } = await import('node:fs');
+    mkdirSync(dirname(path), { recursive: true });
+    const legacy = {
+      command: 'vote',
+      // argsFingerprint deliberately omitted — pre-v0.2 shape
+      status: 'pending',
+      result: {},
+      txHash: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    writeFileSync(path, JSON.stringify({ idempotency: { 'legacy-key': legacy }, sessions: {} }));
+    chmodSync(path, 0o600);
+    // Must produce a clean structured error, not a TypeError on undefined.slice().
+    await expect(
+      upsertIdempotent('legacy-key', entry({ argsFingerprint: 'b'.repeat(64) })),
+    ).rejects.toMatchObject({ code: 'IDEMPOTENCY_ARGS_MISMATCH' });
+  });
+
   it('rejects writes after confirmed (terminal state) with IDEMPOTENCY_TERMINAL_STATE', async () => {
     await upsertIdempotent('done', entry({ status: 'pending' }));
     await upsertIdempotent('done', entry({ status: 'submitted', txHash: '0xabc' }));

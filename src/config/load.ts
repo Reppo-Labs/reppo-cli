@@ -13,6 +13,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import type { Network } from '../chain/addresses.js';
+import { cliError } from '../output/format.js';
 
 export interface Config {
   network: Network;
@@ -55,7 +56,11 @@ function normalizePk(raw: string | undefined): `0x${string}` | undefined {
   if (/^[0-9a-fA-F]{64}$/.test(trimmed)) {
     return `0x${trimmed}`;
   }
-  throw new Error('Private key must be a 32-byte hex string (0x-prefixed or bare 64 hex chars).');
+  throw cliError(
+    'INVALID_PRIVATE_KEY',
+    'Private key must be a 32-byte hex string (0x-prefixed or bare 64 hex chars).',
+    'Check that REPPO_PRIVATE_KEY (or REPPO_VOTER_PRIVATE_KEY) is exactly 64 hex chars, optionally 0x-prefixed.',
+  );
 }
 
 export function loadConfig(overrides: { network?: Network } = {}): Config {
@@ -70,7 +75,11 @@ export function loadConfig(overrides: { network?: Network } = {}): Config {
     'mainnet';
 
   if (networkRaw !== 'mainnet' && networkRaw !== 'testnet') {
-    throw new Error(`Invalid network "${networkRaw}" — must be "mainnet" or "testnet".`);
+    throw cliError(
+      'INVALID_NETWORK',
+      `Invalid network "${networkRaw}" — must be "mainnet" or "testnet".`,
+      'Set REPPO_NETWORK=mainnet (default) or REPPO_NETWORK=testnet, or pass --network <name>.',
+    );
   }
   const network: Network = networkRaw;
 
