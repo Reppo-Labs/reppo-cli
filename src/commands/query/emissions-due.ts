@@ -213,16 +213,18 @@ async function batchedPromiseAll<T, R>(
 }
 
 /**
- * Parse a wei-amount returned by the platform API. Accepts both string
- * decimal ("1500000000000000000") and JS number forms; falls back to 0n
- * on anything unparseable so a single malformed pod entry doesn't crash
- * the whole command. `BigInt()` throws SyntaxError on floats, scientific
- * notation, and non-digit chars — guarded here so we surface a clean 0
- * rather than an opaque INTERNAL_ERROR.
+ * Parse a non-negative wei-amount returned by the platform API. Accepts
+ * both string decimal ("1500000000000000000") and JS number forms; falls
+ * back to 0n on anything unparseable so a single malformed pod entry
+ * doesn't crash the whole command. `BigInt()` throws SyntaxError on
+ * floats, scientific notation, and non-digit chars — guarded here so we
+ * surface a clean 0 rather than an opaque INTERNAL_ERROR. Negatives are
+ * also rejected (claimable emissions are always non-negative) so a buggy
+ * API response can't drag totalDueREPPO below zero.
  */
-function parseWei(v: string | number | undefined): bigint {
+export function parseWei(v: string | number | undefined): bigint {
   if (v === undefined || v === null) return 0n;
   const s = typeof v === 'number' ? Math.trunc(v).toString() : v.toString().trim();
-  if (!/^-?\d+$/.test(s)) return 0n;
+  if (!/^\d+$/.test(s)) return 0n;
   try { return BigInt(s); } catch { return 0n; }
 }
