@@ -19,6 +19,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync, renameSy
 import { dirname } from 'node:path';
 import { homedir } from 'node:os';
 import lockfile from 'proper-lockfile';
+import { cliError } from '../output/format.js';
 
 export type IdempotencyStatus = 'pending' | 'submitted' | 'confirmed' | 'failed';
 
@@ -172,40 +173,34 @@ export async function upsertIdempotent(key: string, entry: IdempotencyEntry): Pr
     const prior = s.idempotency[key];
     if (prior) {
       if (prior.command !== entry.command) {
-        throw Object.assign(
-          new Error(
-            `idempotency key "${key}" was previously used by command "${prior.command}", ` +
+        throw cliError(
+          'IDEMPOTENCY_COMMAND_MISMATCH',
+          `idempotency key "${key}" was previously used by command "${prior.command}", ` +
             `not "${entry.command}". Use a unique key per (command, intent) pair.`,
-          ),
-          {
-            code: 'IDEMPOTENCY_COMMAND_MISMATCH',
-            hint: 'Use a key like "<command>-<intent>-<id>" (e.g. "vote-pod-34-like") so commands cannot collide.',
-          },
+          'Use a key like "<command>-<intent>-<id>" (e.g. "vote-pod-34-like") so commands cannot collide.',
         );
       }
       if (prior.argsFingerprint !== entry.argsFingerprint) {
-        throw Object.assign(
-          new Error(
-            `idempotency key "${key}" was previously used with different args ` +
-            `(fingerprint ${prior.argsFingerprint.slice(0, 12)}…) and is now being reused with new args ` +
+        // Pre-v0.2 entries lack argsFingerprint — render a placeholder so
+        // a legacy entry produces a clean structured error here too,
+        // rather than crashing on `.slice()` of undefined. Normal command
+        // flow catches legacy entries earlier via IDEMPOTENCY_LEGACY_ENTRY,
+        // but `upsertIdempotent` is a public API and may be called directly.
+        const priorFp = prior.argsFingerprint ? prior.argsFingerprint.slice(0, 12) : '(legacy)';
+        throw cliError(
+          'IDEMPOTENCY_ARGS_MISMATCH',
+          `idempotency key "${key}" was previously used with different args ` +
+            `(fingerprint ${priorFp}…) and is now being reused with new args ` +
             `(fingerprint ${entry.argsFingerprint.slice(0, 12)}…).`,
-          ),
-          {
-            code: 'IDEMPOTENCY_ARGS_MISMATCH',
-            hint: 'A given idempotency key represents a single intent. Use a fresh key when the args change (e.g. different --pod or --like value).',
-          },
+          'A given idempotency key represents a single intent. Use a fresh key when the args change (e.g. different --pod or --like value).',
         );
       }
       if (prior.status === 'confirmed') {
-        throw Object.assign(
-          new Error(
-            `idempotency key "${key}" is already in terminal state "confirmed"; ` +
+        throw cliError(
+          'IDEMPOTENCY_TERMINAL_STATE',
+          `idempotency key "${key}" is already in terminal state "confirmed"; ` +
             `refusing to overwrite. Use a new key for a new attempt.`,
-          ),
-          {
-            code: 'IDEMPOTENCY_TERMINAL_STATE',
-            hint: 'A confirmed key is final. Use a fresh --idempotency-key for a new attempt.',
-          },
+          'A confirmed key is final. Use a fresh --idempotency-key for a new attempt.',
         );
       }
     }

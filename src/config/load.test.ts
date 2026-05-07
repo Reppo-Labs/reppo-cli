@@ -104,6 +104,18 @@ describe('loadConfig — network precedence', () => {
     process.env.REPPO_NETWORK = 'goerli';
     expect(() => loadConfig()).toThrow(/Invalid network "goerli"/);
   });
+
+  it('attaches code=INVALID_NETWORK so agents can match it', () => {
+    const { cwd, home } = freshTmp();
+    pointAt(cwd, home);
+    process.env.REPPO_NETWORK = 'goerli';
+    try {
+      loadConfig();
+      expect.fail('expected throw');
+    } catch (e) {
+      expect((e as { code?: string }).code).toBe('INVALID_NETWORK');
+    }
+  });
 });
 
 describe('loadConfig — apiUrl', () => {
@@ -162,6 +174,18 @@ describe('loadConfig — normalizePk', () => {
     pointAt(cwd, home);
     process.env.REPPO_PRIVATE_KEY = '0xdeadbeef';
     expect(() => loadConfig()).toThrow(/32-byte hex/);
+  });
+
+  it('attaches code=INVALID_PRIVATE_KEY so agents can match it', () => {
+    const { cwd, home } = freshTmp();
+    pointAt(cwd, home);
+    process.env.REPPO_PRIVATE_KEY = '0xdeadbeef';
+    try {
+      loadConfig();
+      expect.fail('expected throw');
+    } catch (e) {
+      expect((e as { code?: string }).code).toBe('INVALID_PRIVATE_KEY');
+    }
   });
 
   it('rejects non-hex characters', () => {

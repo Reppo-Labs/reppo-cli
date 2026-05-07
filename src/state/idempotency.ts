@@ -81,39 +81,29 @@ export async function getIdempotent(
   const entry = await readEntry(key);
   if (!entry) return null;
   if (entry.command !== command) {
-    throw Object.assign(
-      new Error(
-        `idempotency key "${key}" was previously used by command "${entry.command}", ` +
+    throw cliError(
+      'IDEMPOTENCY_COMMAND_MISMATCH',
+      `idempotency key "${key}" was previously used by command "${entry.command}", ` +
         `not "${command}". Use a unique key per (command, intent) pair.`,
-      ),
-      { code: 'IDEMPOTENCY_COMMAND_MISMATCH' },
     );
   }
   const fp = fingerprintArgs(args);
   // Pre-v0.2 cache entries lack argsFingerprint. Refuse with a clear
   // migration error rather than silently treating any args as a match.
   if (!entry.argsFingerprint) {
-    throw Object.assign(
-      new Error(
-        `idempotency key "${key}" predates v0.2's args-fingerprint check and cannot be safely re-used.`,
-      ),
-      {
-        code: 'IDEMPOTENCY_LEGACY_ENTRY',
-        hint: 'Delete ~/.reppo/cli-state.json (or set REPPO_STATE_PATH to a fresh file) to clear the legacy cache, then retry with a new --idempotency-key.',
-      },
+    throw cliError(
+      'IDEMPOTENCY_LEGACY_ENTRY',
+      `idempotency key "${key}" predates v0.2's args-fingerprint check and cannot be safely re-used.`,
+      'Delete ~/.reppo/cli-state.json (or set REPPO_STATE_PATH to a fresh file) to clear the legacy cache, then retry with a new --idempotency-key.',
     );
   }
   if (entry.argsFingerprint !== fp) {
-    throw Object.assign(
-      new Error(
-        `idempotency key "${key}" was previously used with different args ` +
+    throw cliError(
+      'IDEMPOTENCY_ARGS_MISMATCH',
+      `idempotency key "${key}" was previously used with different args ` +
         `(fingerprint ${entry.argsFingerprint.slice(0, 12)}…) and is now being read with new args ` +
         `(fingerprint ${fp.slice(0, 12)}…).`,
-      ),
-      {
-        code: 'IDEMPOTENCY_ARGS_MISMATCH',
-        hint: 'A given idempotency key represents a single intent. Use a fresh key when the args change.',
-      },
+      'A given idempotency key represents a single intent. Use a fresh key when the args change.',
     );
   }
   return entry;
