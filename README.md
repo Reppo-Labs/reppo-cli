@@ -1,13 +1,13 @@
-# @reppo-labs/cli
+# @reppo/cli
 
 Command-line interface for [Reppo](https://reppo.ai) — mint pods, vote, lock REPPO, manage datanets. Built for **AI agents** as the primary user, but humans can use it too.
 
-> **Status:** v0.1.0-alpha. `auth`, `query balance`, `query datanet`, `query emissions-due`, `query pod`, `query voting-power`, `claim-emissions`, `extend-lock`, `grant-access`, `lock`, `mint-pod`, `register-agent`, `unlock`, and `vote` ship in alpha. The remaining 2 commands (`create-datanet`, `swap`) are scaffolded but not yet wired.
+> **Status:** v0.1.0. `auth`, `query balance`, `query datanet`, `query emissions-due`, `query pod`, `query voting-power`, `claim-emissions`, `extend-lock`, `grant-access`, `lock`, `mint-pod`, `register-agent`, `unlock`, and `vote` ship in this release. The remaining 2 commands (`create-datanet`, `swap`) are scaffolded but not yet wired.
 
 ## Install
 
 ```bash
-npm i -g @reppo-labs/cli
+npm i -g @reppo/cli
 ```
 
 Requires Node ≥20.

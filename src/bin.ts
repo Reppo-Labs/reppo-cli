@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * @reppo-labs/cli entry point. Registers every command class and dispatches
+ * @reppo/cli entry point. Registers every command class and dispatches
  * via clipanion's runExit.
  */
 import { Cli, Builtins } from 'clipanion';
@@ -22,7 +22,7 @@ import { VoteCommand } from './commands/vote.js';
 const cli = new Cli({
   binaryLabel: 'Reppo CLI',
   binaryName: 'reppo',
-  binaryVersion: '0.1.0-alpha.0',
+  binaryVersion: '0.1.0',
   enableCapture: false,
 });
 

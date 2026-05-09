@@ -1,6 +1,6 @@
 ---
 name: reppo
-description: Use when the user wants to take any action on Reppo (mint a pod, vote, lock REPPO into veReppo, claim emissions, create a datanet, grant subnet access, swap REPPO/USDC). The CLI exposes the full Reppo on-chain surface as `@reppo-labs/cli`.
+description: Use when the user wants to take any action on Reppo (mint a pod, vote, lock REPPO into veReppo, claim emissions, create a datanet, grant subnet access, swap REPPO/USDC). The CLI exposes the full Reppo on-chain surface as `@reppo/cli`.
 ---
 
 # Reppo skill
@@ -15,7 +15,7 @@ Before running any command, verify the CLI is installed:
 reppo --version
 ```
 
-If it's missing, ask the user to run `npm i -g @reppo-labs/cli` (requires Node ≥20). Don't try to install it yourself — the user owns their environment.
+If it's missing, ask the user to run `npm i -g @reppo/cli` (requires Node ≥20). Don't try to install it yourself — the user owns their environment.
 
 ## Required environment
 
