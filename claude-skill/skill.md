@@ -97,6 +97,28 @@ reppo mint-pod --subnet 19 --json --idempotency-key mint-pod-tweet-12345
 
 The result includes the on-chain `podId` and `txHash`. Capture both — you'll need `podId` for downstream `vote` and `claim-emissions` calls.
 
+### Discover what exists
+
+Before publishing or voting, agents often need to enumerate. Two list commands cover the common cases:
+
+```bash
+# Browse every datanet on the platform (public — no auth needed).
+reppo list datanets --json
+# → {"network":"mainnet","datanets":[{"id":"1","name":"Root Datanet","status":"ACTIVE","accessFeeREPPO":"0", …}],"count":12}
+
+# Filter to a specific reward token, e.g. only REPPO-emitting datanets.
+reppo list datanets --token-symbol REPPO --json
+
+# List pods owned by the configured wallet (requires REPPO_PRIVATE_KEY).
+reppo list pods --json
+# → {"address":"0x…","network":"mainnet","pods":[{"podId":"42","subnetId":"19", …}],"count":3}
+
+# Add unclaimed-emissions info per pod (slower — one extra fetch per pod).
+reppo list pods --include-emissions --json
+```
+
+Use the `id` field from `list datanets` as the input to `query datanet <id>` or `grant-access --datanet <id>`. Use `podId` from `list pods` as the input to `vote`, `query pod`, or `claim-emissions`.
+
 ### Claim emissions across all owned pods
 
 ```bash
