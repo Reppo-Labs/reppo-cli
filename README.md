@@ -47,6 +47,11 @@ Errors **always** emit JSON on stderr regardless of mode, with a stable `code` f
 - `reppo query datanet <datanetId> [--for <addr>]` — validity + REPPO access fee, optionally check access for an address
 - `reppo query emissions-due` — list unclaimed REPPO emissions across all pods owned by the configured wallet (uses platform API)
 
+### List
+
+- `reppo list datanets [--status ACTIVE|ALL] [--token-symbol <sym>] [--limit <n>]` — list all datanets on the platform (public endpoint, no auth required)
+- `reppo list pods [--include-emissions] [--limit <n>]` — list pods owned by the configured wallet (uses platform API)
+
 ### Write
 
 - `reppo vote --pod <id> --subnet <id> --like|--dislike` — cast an on-chain vote
