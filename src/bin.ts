@@ -24,7 +24,7 @@ import { VoteCommand } from './commands/vote.js';
 const cli = new Cli({
   binaryLabel: 'Reppo CLI',
   binaryName: 'reppo',
-  binaryVersion: '0.1.0',
+  binaryVersion: '0.1.1',
   enableCapture: false,
 });
 
