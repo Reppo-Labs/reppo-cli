@@ -50,7 +50,7 @@ Errors **always** emit JSON on stderr regardless of mode, with a stable `code` f
 ### List
 
 - `reppo list datanets [--status ACTIVE|ALL] [--token-symbol <sym>] [--limit <n>]` — list all datanets on the platform (public endpoint, no auth required)
-- `reppo list pods [--include-emissions] [--limit <n>]` — list pods owned by the configured wallet (uses platform API)
+- `reppo list pods [--datanet <id>] [--include-emissions] [--limit <n>]` — list pods owned by the configured wallet, optionally scoped to a single datanet (uses platform API)
 
 ### Write
 

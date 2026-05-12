@@ -91,6 +91,7 @@ interface CommandLike {
   rpcUrl: string | undefined;
   json: boolean;
   includeEmissions: boolean;
+  datanet: string | undefined;
   limit: string | undefined;
   context: unknown;
   cli: unknown;
@@ -102,6 +103,7 @@ function makeCommand(opts: {
   apiUrl?: string;
   json?: boolean;
   includeEmissions?: boolean;
+  datanet?: string;
   limit?: string;
 } = {}): { cmd: InstanceType<typeof ListPodsCommand>; restoreEnv: () => void } {
   const origPk = process.env.REPPO_PRIVATE_KEY;
@@ -129,6 +131,7 @@ function makeCommand(opts: {
   cmd.rpcUrl = undefined;
   cmd.json = opts.json ?? true;
   cmd.includeEmissions = opts.includeEmissions ?? false;
+  cmd.datanet = opts.datanet;
   cmd.limit = opts.limit;
   // Clipanion injects these at runtime; stub minimal values for direct invocation.
   cmd.context = { stdin: process.stdin, stdout: process.stdout, stderr: process.stderr, env: process.env, colorDepth: 1 };
@@ -391,6 +394,87 @@ describe('list pods', () => {
       await cmd.execute();
       expect(getOrRefreshSession.mock.calls[0]?.[0]).toBe('testnet');
       expect(getOrRefreshSession.mock.calls[0]?.[1]).toBe('https://testnet-api.example');
+    } finally {
+      restoreEnv();
+    }
+  });
+
+  it('--datanet 19 returns only pods belonging to that subnet', async () => {
+    const { cmd, restoreEnv } = makeCommand({ datanet: '19' });
+    try {
+      getOrRefreshSession.mockResolvedValueOnce(defaultSession());
+      platformGet.mockResolvedValueOnce({
+        data: {
+          pods: [
+            { podId: '42', subnetId: '19' },
+            { podId: '43', subnetId: '7' },
+            { podId: '44', subnetId: '19' },
+            { podId: '45' }, // no subnetId — must NOT match
+          ],
+        },
+      });
+
+      const code = await cmd.execute();
+      expect(code).toBe(0);
+      const out = parseOk(capturedJson);
+      expect(out.count).toBe(2);
+      expect(out.pods.map((p: { podId: string }) => p.podId)).toEqual(['42', '44']);
+    } finally {
+      restoreEnv();
+    }
+  });
+
+  it('--datanet 19 filter applies before --limit (cap is on filtered set, not raw API page)', async () => {
+    const { cmd, restoreEnv } = makeCommand({ datanet: '19', limit: '1' });
+    try {
+      getOrRefreshSession.mockResolvedValueOnce(defaultSession());
+      platformGet.mockResolvedValueOnce({
+        data: {
+          pods: [
+            { podId: '1', subnetId: '7' },  // filtered out
+            { podId: '2', subnetId: '19' }, // first match — kept
+            { podId: '3', subnetId: '19' }, // second match — would be kept but --limit caps at 1
+            { podId: '4', subnetId: '99' },
+          ],
+        },
+      });
+
+      const code = await cmd.execute();
+      expect(code).toBe(0);
+      const out = parseOk(capturedJson);
+      expect(out.count).toBe(1);
+      expect(out.pods[0]!.podId).toBe('2');
+    } finally {
+      restoreEnv();
+    }
+  });
+
+  it('--datanet with no matches emits count 0 (not the "no pods" message) when wallet owns other pods', async () => {
+    const { cmd, restoreEnv } = makeCommand({ datanet: '99' });
+    try {
+      getOrRefreshSession.mockResolvedValueOnce(defaultSession());
+      platformGet.mockResolvedValueOnce({
+        data: { pods: [{ podId: '1', subnetId: '19' }, { podId: '2', subnetId: '7' }] },
+      });
+
+      const code = await cmd.execute();
+      expect(code).toBe(0);
+      const out = parseOk(capturedJson);
+      expect(out.count).toBe(0);
+      expect(out.pods).toEqual([]);
+    } finally {
+      restoreEnv();
+    }
+  });
+
+  it('rejects --datanet "abc" with INVALID_DATANET before any network call', async () => {
+    const { cmd, restoreEnv } = makeCommand({ datanet: 'abc' });
+    try {
+      await expect(cmd.execute()).rejects.toThrow(/__exit_/);
+      expect(getOrRefreshSession).not.toHaveBeenCalled();
+      const err = parseErr(capturedErrorJson);
+      expect(err.code).toBe('INVALID_DATANET');
+      expect(exitCode).toBe(1);
     } finally {
       restoreEnv();
     }
