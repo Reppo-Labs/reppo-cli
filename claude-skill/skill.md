@@ -113,6 +113,9 @@ reppo list datanets --token-symbol REPPO --json
 reppo list pods --json
 # → {"address":"0x…","network":"mainnet","pods":[{"podId":"42","subnetId":"19", …}],"count":3}
 
+# Scope to a single datanet — useful when an agent only cares about its pods in one subnet.
+reppo list pods --datanet 19 --json
+
 # Add unclaimed-emissions info per pod (slower — one extra fetch per pod).
 reppo list pods --include-emissions --json
 ```

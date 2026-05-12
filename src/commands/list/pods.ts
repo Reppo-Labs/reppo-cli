@@ -78,11 +78,17 @@ export class ListPodsCommand extends BaseCommand {
         'reppo list pods --include-emissions'],
       ['Cap at 5 rows',
         'reppo list pods --limit 5'],
+      ['Only pods in datanet 19',
+        'reppo list pods --datanet 19 --json'],
     ],
   });
 
   includeEmissions = Option.Boolean('--include-emissions', false, {
     description: 'Also fetch unclaimed emissions per pod (N+1 against platform; off by default)',
+  });
+
+  datanet = Option.String('--datanet', {
+    description: 'Only list pods belonging to this datanet (subnet) id.',
   });
 
   limit = Option.String('--limit', { description: 'Max rows to return (default: unlimited)' });
@@ -110,6 +116,22 @@ export class ListPodsCommand extends BaseCommand {
           );
         }
         limit = n;
+      }
+
+      // Parse --datanet up front. Subnet ids are non-negative integers
+      // on-chain; normalize to the string form returned by the API so the
+      // filter comparison below is a simple === check.
+      let datanetFilter: string | undefined;
+      if (this.datanet !== undefined) {
+        const trimmed = this.datanet.trim();
+        const n = Number(trimmed);
+        if (!Number.isInteger(n) || n < 0 || trimmed === '') {
+          throw cliError(
+            'INVALID_DATANET',
+            `--datanet must be a non-negative integer; got "${this.datanet}".`,
+          );
+        }
+        datanetFilter = n.toString();
       }
 
       // Auto-acquire/refresh the session token. Same flow `reppo auth` runs.
@@ -141,7 +163,13 @@ export class ListPodsCommand extends BaseCommand {
         })
         .filter((p): p is NonNullable<typeof p> => p !== null);
 
-      const truncated = limit !== undefined ? normalized.slice(0, limit) : normalized;
+      // Apply --datanet filter before --limit so the cap reflects the
+      // user's filtered view, not the raw API page.
+      const filtered = datanetFilter !== undefined
+        ? normalized.filter((p) => p.subnetId === datanetFilter)
+        : normalized;
+
+      const truncated = limit !== undefined ? filtered.slice(0, limit) : filtered;
 
       if (truncated.length === 0) {
         const result = {
@@ -150,12 +178,20 @@ export class ListPodsCommand extends BaseCommand {
           pods: [] as unknown[],
           count: 0,
         };
-        emit(result, [
+        const emptyLines = [
           `Wallet:  ${session.walletAddress}`,
           `Network: ${cfg.network}`,
-          `No pods owned by this wallet.`,
-          `(Mint a pod with \`reppo mint-pod\` first.)`,
-        ]);
+        ];
+        if (datanetFilter !== undefined) emptyLines.push(`Datanet: ${datanetFilter}`);
+        if (datanetFilter !== undefined && normalized.length > 0) {
+          emptyLines.push(`No pods in this datanet (wallet owns ${normalized.length} pod(s) total).`);
+        } else {
+          emptyLines.push(
+            `No pods owned by this wallet.`,
+            `(Mint a pod with \`reppo mint-pod\` first.)`,
+          );
+        }
+        emit(result, emptyLines);
         return 0;
       }
 
@@ -240,8 +276,11 @@ export class ListPodsCommand extends BaseCommand {
       const lines = [
         `Wallet:  ${session.walletAddress}`,
         `Network: ${cfg.network}`,
-        `Pods:    ${pods.length}${limit !== undefined && normalized.length > pods.length ? ` (of ${normalized.length}; limited)` : ''}`,
       ];
+      if (datanetFilter !== undefined) lines.push(`Datanet: ${datanetFilter}`);
+      lines.push(
+        `Pods:    ${pods.length}${limit !== undefined && filtered.length > pods.length ? ` (of ${filtered.length}; limited)` : ''}`,
+      );
       if (totalUnclaimed !== undefined) {
         lines.push(`Total unclaimed: ${formatUnits(totalUnclaimed, 18)} REPPO`);
       }
