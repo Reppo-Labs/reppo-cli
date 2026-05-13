@@ -9,8 +9,8 @@
  * "did the lockup mint succeed?" (lockupCount went up) and "how much
  * voting power did I get?" (votingPowerOf delta).
  *
- * If veReppo is TBD on the chosen network (mainnet today), each field
- * emits `{ unavailable: "<reason>" }` rather than a misleading 0.
+ * If veReppo is TBD on the chosen network, each field emits
+ * `{ unavailable: "<reason>" }` rather than a misleading 0.
  */
 import { Option } from 'clipanion';
 import { formatUnits, isAddress, type Address } from 'viem';
