@@ -26,10 +26,12 @@ describe('tryX() non-throwing contract helpers', () => {
       expect(c?.address).toBe('0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913');
     });
 
-    it('returns null for contracts whose address is the TBD placeholder', () => {
-      // SubnetManager + veReppo are TBD on mainnet today.
+    it('tryVeReppo returns the live mainnet veReppo address', () => {
+      expect(tryVeReppo('mainnet')?.address).toBe('0x0EFBE19Cb7B07D934D01990a8989E9CaA98b9009');
+    });
+
+    it('trySubnetManager returns null on mainnet (still TBD)', () => {
       expect(trySubnetManager('mainnet')).toBeNull();
-      expect(tryVeReppo('mainnet')).toBeNull();
     });
   });
 

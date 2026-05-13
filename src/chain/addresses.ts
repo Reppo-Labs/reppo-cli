@@ -1,6 +1,6 @@
 /**
- * Per-network contract bundles. Mainnet REPPO/PodManager/USDC are fixed and
- * verified. SubnetManager + veReppo mainnet addresses are TBD pending Reppo
+ * Per-network contract bundles. Mainnet REPPO/PodManager/USDC/veReppo are
+ * fixed and verified. SubnetManager mainnet address is TBD pending Reppo
  * docs — placeholders throw when accessed so we fail loudly instead of
  * silently sending to 0x0.
  */
@@ -26,7 +26,7 @@ const MAINNET: AddressBundle = {
   podManager:    '0xcfF0511089D0Fbe92E1788E4aFFF3E7930b3D47c',
   subnetManager: TBD, // TODO: confirm mainnet SubnetManager address with Reppo
   reppoToken:    '0xFf8104251E7761163faC3211eF5583FB3F8583d6',
-  veReppo:       TBD, // TODO: confirm mainnet veReppo address with Reppo
+  veReppo:       '0x0EFBE19Cb7B07D934D01990a8989E9CaA98b9009',
   usdc:          '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
   uniswapRouter: '0x2626664c2603336E57B271c5C0b26F421741e481',
   uniswapQuoter: '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a',
