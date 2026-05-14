@@ -1,8 +1,10 @@
 /**
- * Per-network contract bundles. Mainnet REPPO/PodManager/USDC/veReppo are
- * fixed and verified. SubnetManager mainnet address is TBD pending Reppo
- * docs — placeholders throw when accessed so we fail loudly instead of
- * silently sending to 0x0.
+ * Per-network contract bundles. Mainnet contracts are fully wired
+ * (PodManager V2, SubnetManager, veReppo, REPPO, USDC, Uniswap). The
+ * V1 PodManager 0xcfF051... is intentionally not supported.
+ *
+ * Testnet USDC remains a TBD placeholder. The placeholder throws on
+ * access so we fail loudly instead of silently sending to 0x0.
  */
 import type { Address } from 'viem';
 import { cliError } from '../output/format.js';
@@ -23,8 +25,8 @@ export interface AddressBundle {
 const TBD = '0x0000000000000000000000000000000000000000' as const;
 
 const MAINNET: AddressBundle = {
-  podManager:    '0xcfF0511089D0Fbe92E1788E4aFFF3E7930b3D47c',
-  subnetManager: TBD, // TODO: confirm mainnet SubnetManager address with Reppo
+  podManager:    '0x5C563f853eb4db33005A5C1aD9290e8560254A80', // PodManager V2 (V1 0xcfF051... deprecated, not supported)
+  subnetManager: '0x2629A8083065938B533b117704935D727270eE7A',
   reppoToken:    '0xFf8104251E7761163faC3211eF5583FB3F8583d6',
   veReppo:       '0x0EFBE19Cb7B07D934D01990a8989E9CaA98b9009',
   usdc:          '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
