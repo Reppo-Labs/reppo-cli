@@ -12,7 +12,7 @@ describe('tryX() non-throwing contract helpers', () => {
     it('tryPodManager returns the mainnet ABI bound to the mainnet address', () => {
       const c = tryPodManager('mainnet');
       expect(c).not.toBeNull();
-      expect(c?.address).toBe('0xcfF0511089D0Fbe92E1788E4aFFF3E7930b3D47c');
+      expect(c?.address).toBe('0x5C563f853eb4db33005A5C1aD9290e8560254A80');
       expect(c?.abi).toBeDefined();
     });
 
@@ -30,8 +30,8 @@ describe('tryX() non-throwing contract helpers', () => {
       expect(tryVeReppo('mainnet')?.address).toBe('0x0EFBE19Cb7B07D934D01990a8989E9CaA98b9009');
     });
 
-    it('trySubnetManager returns null on mainnet (still TBD)', () => {
-      expect(trySubnetManager('mainnet')).toBeNull();
+    it('trySubnetManager returns the live mainnet SubnetManager address', () => {
+      expect(trySubnetManager('mainnet')?.address).toBe('0x2629A8083065938B533b117704935D727270eE7A');
     });
   });
 
