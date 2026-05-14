@@ -61,7 +61,7 @@ Errors **always** emit JSON on stderr regardless of mode, with a stable `code` f
 - `reppo extend-lock <lockupId> --duration <seconds>` — extend an existing veREPPO lockup
 - `reppo grant-access --datanet <id> [--to <addr>]` — pay the REPPO access fee and grant `--to` access to a datanet
 - `reppo claim-emissions --pod <id> --epoch <n>` — claim a pod's emissions for an epoch
-- `reppo register-agent --name <s> --description <s>` — register a new agent identity on the Reppo platform; returns id + accessToken + a server-provisioned (unfunded) Base wallet address. Send ETH + REPPO to it before on-chain mints.
+- `reppo register-agent --name <s> --description <s>` — register a new agent identity on the Reppo platform; returns `{ id, apiKey }`. The apiKey is the Bearer token for subsequent agent-scoped calls (`/agents/[id]/subnets`, `/agents/[id]/pods`). On-chain mints use your `REPPO_PRIVATE_KEY` wallet; the platform no longer provisions one server-side.
 - `reppo auth [--force]` — sign in to the platform API (api.reppo.xyz); caches a 24h Bearer token used by `query emissions-due` and other platform-API commands
 - `reppo create-datanet ...` *(planned — currently dashboard-only; the REST endpoint requires a Privy session cookie which is browser auth)*
 - `reppo swap <from> <to> --amount <n>` *(planned, mainnet only)*

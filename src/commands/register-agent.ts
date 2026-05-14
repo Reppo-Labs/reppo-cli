@@ -1,31 +1,28 @@
 /**
  * `reppo register-agent --name <s> --description <s>` — register a new
  * agent identity on the Reppo platform. Returns a persistent agent
- * id + accessToken + walletAddress on Base.
+ * id + apiKey (Bearer token).
  *
  * Endpoint: `POST https://reppo.ai/api/v1/agents/register` (no auth).
+ * Spec: https://docs.reppo.ai/api/agent/custom-agents
  *
- * The Reppo platform exposes two distinct agent auth surfaces:
- *   - `reppo.ai/api/v1/agents/...` — uses the persistent `accessToken`
- *     returned by this command (Bearer header). Used for pod-metadata
- *     submissions and agent-scoped reads.
- *   - `api.reppo.xyz/...` — uses an EIP-191 wallet-signed 24h session
- *     token (separate `reppo auth` flow, lands in v0.2 of this CLI).
+ * Two distinct agent auth surfaces on the platform:
+ *   - `reppo.ai/api/v1/agents/...` — uses the persistent `apiKey`
+ *     returned by this command (Bearer header). Used for the
+ *     agent-scoped endpoints (POST /agents/[id]/subnets, /pods).
+ *   - `api.reppo.xyz/...` — Privy / wallet-auth flow (`reppo auth`).
  *
- * Each call to /agents/register creates a NEW identity with a NEW
- * walletAddress. Re-registering does NOT recover a previous agent —
- * pods minted by the prior agent stay attributed to that prior
- * id/wallet. Save the returned credentials.
+ * Each call to /agents/register creates a NEW identity. Re-registering
+ * does NOT recover a previous agent — save the returned credentials.
  *
- * The new walletAddress starts unfunded. Send ETH (gas) and REPPO
- * (publishing fee) to it before the agent attempts on-chain mints.
+ * No private key required for registration itself — it's permissionless.
+ * The agent's on-chain wallet for minting is the user's own
+ * REPPO_PRIVATE_KEY; the platform no longer provisions one server-side.
+ * After an on-chain mint, the agent calls the agent-scoped /pods or
+ * /subnets endpoint with the resulting txHash to register metadata.
  *
  * Output schema:
- *   { id, accessToken, walletAddress }
- *
- * No private key required — registration is permissionless. The CLI's
- * REPPO_PRIVATE_KEY is unused here; the agent's wallet is provisioned
- * server-side and its credentials live in the accessToken.
+ *   { id, apiKey }
  */
 import { Option } from 'clipanion';
 import { BaseCommand } from './_base.js';
@@ -41,8 +38,7 @@ const AGENTS_API_BASE = 'https://reppo.ai/api/v1';
 interface RegisterResponse {
   data?: {
     id?: string;
-    accessToken?: string;
-    walletAddress?: string;
+    apiKey?: string;
   };
   // Some platform errors return { error: "..." } or { message: "..." }
   error?: string;
@@ -111,33 +107,32 @@ export class RegisterAgentCommand extends BaseCommand {
       }
 
       const data = body?.data;
-      if (!data?.id || !data.accessToken || !data.walletAddress) {
+      if (!data?.id || !data.apiKey) {
         throw cliError(
           'PLATFORM_API_INVALID_RESPONSE',
-          `Reppo platform returned 200 but the response is missing expected fields (id, accessToken, walletAddress).`,
+          `Reppo platform returned 200 but the response is missing expected fields (id, apiKey).`,
           'Capture the full HTTP response and file an issue.',
         );
       }
 
       const result = {
         id: data.id,
-        accessToken: data.accessToken,
-        walletAddress: data.walletAddress,
+        apiKey: data.apiKey,
       };
 
       emit(result, [
         `✓ Registered new agent "${trimmedName}"`,
         ``,
-        `  id:            ${data.id}`,
-        `  walletAddress: ${data.walletAddress}`,
-        `  accessToken:   ${data.accessToken}`,
+        `  id:     ${data.id}`,
+        `  apiKey: ${data.apiKey}`,
         ``,
         `⚠ SAVE THESE CREDENTIALS NOW.`,
-        `  - The accessToken is the agent's persistent credential — don't share it.`,
-        `  - Re-running register-agent creates a NEW agent identity with a NEW walletAddress.`,
-        `    Pods previously minted by an old agent stay attributed to the old wallet.`,
-        `  - Fund ${data.walletAddress} with ETH (for gas) and REPPO (for publishing fees)`,
-        `    before the agent attempts on-chain mints.`,
+        `  - The apiKey is the agent's persistent Bearer token — don't share it.`,
+        `  - Re-running register-agent creates a NEW agent identity. Pods previously`,
+        `    registered by an old agent stay attributed to that old id.`,
+        `  - On-chain mints use your REPPO_PRIVATE_KEY wallet. After minting, the`,
+        `    platform expects an /agents/${data.id}/{pods,subnets} call with the`,
+        `    resulting txHash to register the metadata.`,
       ]);
       return 0;
     } catch (err) {
