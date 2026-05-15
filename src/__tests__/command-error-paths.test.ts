@@ -65,21 +65,33 @@ const JSON_FLAG = ['--json'];
 
 describe('vote', () => {
   it('rejects neither --like nor --dislike with INVALID_VOTE', async () => {
-    const r = await runCli(['vote', '--pod', '34', '--subnet', '19', ...JSON_FLAG], { REPPO_PRIVATE_KEY: FAKE_PK });
+    const r = await runCli(['vote', '--pod', '34', '--votes', '100', ...JSON_FLAG], { REPPO_PRIVATE_KEY: FAKE_PK });
     expect(r.exitCode).not.toBe(0);
     expect(parseError(r.stderr).code).toBe('INVALID_VOTE');
   });
 
   it('rejects both --like AND --dislike with INVALID_VOTE', async () => {
-    const r = await runCli(['vote', '--pod', '34', '--subnet', '19', '--like', '--dislike', ...JSON_FLAG], { REPPO_PRIVATE_KEY: FAKE_PK });
+    const r = await runCli(['vote', '--pod', '34', '--votes', '100', '--like', '--dislike', ...JSON_FLAG], { REPPO_PRIVATE_KEY: FAKE_PK });
     expect(r.exitCode).not.toBe(0);
     expect(parseError(r.stderr).code).toBe('INVALID_VOTE');
   });
 
   it('rejects missing private key with MISSING_PRIVATE_KEY', async () => {
-    const r = await runCli(['vote', '--pod', '34', '--subnet', '19', '--like', ...JSON_FLAG]);
+    const r = await runCli(['vote', '--pod', '34', '--votes', '100', '--like', ...JSON_FLAG]);
     expect(r.exitCode).not.toBe(0);
     expect(parseError(r.stderr).code).toBe('MISSING_PRIVATE_KEY');
+  });
+
+  it('rejects non-numeric --votes with INVALID_VOTES', async () => {
+    const r = await runCli(['vote', '--pod', '34', '--votes', 'abc', '--like', ...JSON_FLAG], { REPPO_PRIVATE_KEY: FAKE_PK });
+    expect(r.exitCode).not.toBe(0);
+    expect(parseError(r.stderr).code).toBe('INVALID_VOTES');
+  });
+
+  it('rejects zero --votes with INVALID_VOTES', async () => {
+    const r = await runCli(['vote', '--pod', '34', '--votes', '0', '--like', ...JSON_FLAG], { REPPO_PRIVATE_KEY: FAKE_PK });
+    expect(r.exitCode).not.toBe(0);
+    expect(parseError(r.stderr).code).toBe('INVALID_VOTES');
   });
 });
 
@@ -172,19 +184,13 @@ describe('claim-emissions', () => {
 });
 
 describe('mint-pod', () => {
-  it('rejects mainnet without --share with MISSING_SHARE', async () => {
+  it('rejects missing --datanet with MISSING_DATANET on mainnet', async () => {
     const r = await runCli(['mint-pod', ...JSON_FLAG], { REPPO_PRIVATE_KEY: FAKE_PK, REPPO_NETWORK: 'mainnet' });
     expect(r.exitCode).not.toBe(0);
-    expect(parseError(r.stderr).code).toBe('MISSING_SHARE');
+    expect(parseError(r.stderr).code).toBe('MISSING_DATANET');
   });
 
-  it('rejects out-of-range --share with INVALID_SHARE', async () => {
-    const r = await runCli(['mint-pod', '--share', '150', ...JSON_FLAG], { REPPO_PRIVATE_KEY: FAKE_PK, REPPO_NETWORK: 'mainnet' });
-    expect(r.exitCode).not.toBe(0);
-    expect(parseError(r.stderr).code).toBe('INVALID_SHARE');
-  });
-
-  it('rejects testnet without --datanet with MISSING_DATANET', async () => {
+  it('rejects missing --datanet with MISSING_DATANET on testnet', async () => {
     const r = await runCli(['mint-pod', ...JSON_FLAG], { REPPO_PRIVATE_KEY: FAKE_PK, REPPO_NETWORK: 'testnet' });
     expect(r.exitCode).not.toBe(0);
     expect(parseError(r.stderr).code).toBe('MISSING_DATANET');

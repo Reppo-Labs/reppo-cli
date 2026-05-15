@@ -60,23 +60,28 @@ Every write command accepts `--idempotency-key <stable-string>`. The CLI caches 
 ### Vote on a pod
 
 Voting requires:
-1. Voter has voting power (veREPPO > 0)
-2. Voter has subnet access
-3. Voter is not the pod's publisher
+1. Pod is valid for the current voting epoch (`reppo query pod <id>` to verify)
+2. Voter has at least `--votes` worth of voting power (veREPPO)
+3. Voter has subnet access for the pod's parent subnet
+4. Voter is not the pod's publisher
 
-The CLI checks #1 and #2 and emits structured errors with recovery hints. For #3, ensure `REPPO_VOTER_PRIVATE_KEY` is a different EOA than the one that minted the pod.
+Pass `--votes <n>` to choose how much voting power to spend on this call (the contract debits voting power per vote — it's not a yes/no flag). The CLI checks #1 and #2 client-side; #3 and #4 surface as structured errors via the on-chain decoder. For #4, ensure `REPPO_VOTER_PRIVATE_KEY` is a different EOA than the one that minted the pod.
 
 ```bash
 # Dry-run first
-reppo vote --pod 34 --subnet 19 --like --dry-run --json
+reppo vote --pod 34 --votes 100 --like --dry-run --json
 
 # If clean, cast for real
-reppo vote --pod 34 --subnet 19 --like --json --idempotency-key vote-pod-34-like
+reppo vote --pod 34 --votes 100 --like --json --idempotency-key vote-pod-34-like
 ```
 
-If you get `code: INSUFFICIENT_VOTING_POWER`, run `reppo lock` first.
+If you get `code: INSUFFICIENT_VOTING_POWER`, run `reppo lock` first (or pass a smaller `--votes`).
 
-If you get `code: VOTER_LACKS_SUBNET_ACCESS`, run `reppo grant-access --subnet 19` first.
+If you get `code: VOTER_LACKS_SUBNET_ACCESS`, run `reppo grant-access --datanet <id>` first.
+
+If you get `code: CANNOT_VOTE_FOR_OWN_POD`, switch `REPPO_VOTER_PRIVATE_KEY` to a non-publisher EOA.
+
+If you get `code: POD_NOT_VALID_FOR_EPOCH`, the pod is not eligible to receive votes this epoch — re-check via `reppo query pod <id>`.
 
 ### Lock REPPO for voting power
 
@@ -92,8 +97,10 @@ The result includes `votingPowerGained`. Verify with `reppo query voting-power`.
 ### Mint a pod
 
 ```bash
-reppo mint-pod --subnet 19 --json --idempotency-key mint-pod-tweet-12345
+reppo mint-pod --datanet 19 --json --idempotency-key mint-pod-tweet-12345
 ```
+
+Pay the mint fee in the datanet's primary token instead of REPPO with `--token primary`.
 
 The result includes the on-chain `podId` and `txHash`. Capture both — you'll need `podId` for downstream `vote` and `claim-emissions` calls.
 
@@ -152,14 +159,19 @@ reppo create-datanet --name "My A/B Tests" \
 
 | `code` | Recovery |
 |---|---|
-| `INSUFFICIENT_VOTING_POWER` | `reppo lock <amount> --duration 7200` first |
-| `VOTER_LACKS_SUBNET_ACCESS` | `reppo grant-access --subnet <id>` first |
-| `PUBLISHER_LACKS_SUBNET_ACCESS` | `reppo grant-access --subnet <id>` for the publisher EOA |
-| `VOTE_REJECTED_PRECONDITION` | Voter is likely the publisher — use a different `REPPO_VOTER_PRIVATE_KEY` |
+| `INSUFFICIENT_VOTING_POWER` | `reppo lock <amount> --duration 7200` first, or pass a smaller `--votes` |
+| `VOTER_LACKS_SUBNET_ACCESS` | `reppo grant-access --datanet <id>` first |
+| `PUBLISHER_LACKS_SUBNET_ACCESS` | `reppo grant-access --datanet <id>` for the publisher EOA |
+| `POD_NOT_VALID_FOR_EPOCH` | Pod is not eligible for this voting epoch — verify with `reppo query pod <id>`; publisher may need to republish |
+| `CANNOT_VOTE_FOR_OWN_POD` | Voter EOA is the pod's publisher — switch `REPPO_VOTER_PRIVATE_KEY` to a different wallet |
+| `INVALID_SUBNET` | The subnet/datanet id does not exist on SubnetManager. Run `reppo list datanets` to find a valid id |
+| `POD_NOT_FOUND` / `POD_DOES_NOT_EXIST` | Pod id does not exist — verify with `reppo query pod <id>` |
+| `ZERO_VOTES` | `--votes` cannot be zero — pass `--votes <n>` with n >= 1 |
 | `INSUFFICIENT_ALLOWANCE` | A spender is missing an ERC-20 approval. Auto-approval lands in v0.2; for now, send the `approve()` tx manually (e.g. via cast or a small script) before retrying. |
 | `MISSING_PRIVATE_KEY` | Ask the user to set `REPPO_PRIVATE_KEY` (or `REPPO_VOTER_PRIVATE_KEY` for votes) |
 | `MISSING_ADDRESS` | Pass an address argument or set `REPPO_PRIVATE_KEY` |
 | `INVALID_VOTE` | `--like` and `--dislike` are mutually exclusive; pass exactly one |
+| `INVALID_VOTES` | `--votes` must be a positive integer |
 | `TX_REVERTED` | Tx was mined but reverted — re-check preconditions |
 | `INTERNAL_ERROR` | Bug in the CLI — capture full stderr and ask the user to file an issue |
 
@@ -168,7 +180,7 @@ reppo create-datanet --name "My A/B Tests" \
 Default is mainnet. For testnet (Base Sepolia, Reppo's staging API):
 
 ```bash
-reppo vote --pod 34 --subnet 19 --like --network testnet
+reppo vote --pod 34 --votes 100 --like --network testnet
 # or
 export REPPO_NETWORK=testnet
 ```

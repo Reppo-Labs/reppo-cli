@@ -1,9 +1,12 @@
 /**
  * Network-aware contract resolver. Returns `{ address, abi }` for each
  * contract so callers can't accidentally pair the wrong ABI with the
- * wrong address (the mainnet vs testnet PodManager param variant is the most common
- * footgun: mainnet uses `mintPod(to, share)` while testnet uses
- * `mintPodWithREPPO(to, subnetId)`).
+ * wrong address.
+ *
+ * As of PodManager V2 (CLI 0.3.0+), mainnet and testnet share the same
+ * PodManager ABI. The pre-V2 mainnet-specific `mintPod(to, share)` /
+ * `publishingFee()` shape is gone; both networks use
+ * `mintPodWithREPPO(to, subnetId)` and `vote(podId, votes, upVote)`.
  *
  * Throws via requireAddress() if the network's address is the TBD
  * placeholder — fails loud rather than silently calling 0x0.
@@ -11,8 +14,7 @@
 import type { Address } from 'viem';
 import { getAddresses, requireAddress, type Network } from './addresses.js';
 import {
-  POD_MANAGER_MAINNET_ABI,
-  POD_MANAGER_TESTNET_ABI,
+  POD_MANAGER_ABI,
   SUBNET_MANAGER_ABI,
   VE_REPPO_ABI,
   ERC20_ABI,
@@ -23,11 +25,11 @@ export interface Contract<TAbi> {
   abi: TAbi;
 }
 
-export function podManager(network: Network): Contract<typeof POD_MANAGER_MAINNET_ABI | typeof POD_MANAGER_TESTNET_ABI> {
+export function podManager(network: Network): Contract<typeof POD_MANAGER_ABI> {
   const addrs = getAddresses(network);
   return {
     address: requireAddress(addrs.podManager, 'PodManager'),
-    abi: network === 'mainnet' ? POD_MANAGER_MAINNET_ABI : POD_MANAGER_TESTNET_ABI,
+    abi: POD_MANAGER_ABI,
   };
 }
 
@@ -78,10 +80,10 @@ function tryAddress(addr: Address): Address | null {
 
 export function tryPodManager(
   network: Network,
-): Contract<typeof POD_MANAGER_MAINNET_ABI | typeof POD_MANAGER_TESTNET_ABI> | null {
+): Contract<typeof POD_MANAGER_ABI> | null {
   const a = tryAddress(getAddresses(network).podManager);
   if (!a) return null;
-  return { address: a, abi: network === 'mainnet' ? POD_MANAGER_MAINNET_ABI : POD_MANAGER_TESTNET_ABI };
+  return { address: a, abi: POD_MANAGER_ABI };
 }
 
 export function trySubnetManager(network: Network): Contract<typeof SUBNET_MANAGER_ABI> | null {

@@ -1,31 +1,34 @@
 /**
- * Minimal ABIs for the Reppo contract surface the CLI touches. Mainnet
- * is the canonical PodManager (`mintPod(to, emissionShare)`); testnet
- * is a fork of mainnet with subnet/datanet logic added for a client
- * experiment (`mintPodWithREPPO(to, subnetId)` /
- * `mintPodWithPrimaryToken(to, subnetId)`). Same method family, different
- * parameters. Voting + ve-token + subnet access ABIs are shared.
+ * Minimal ABIs for the Reppo contract surface the CLI touches.
+ *
+ * As of PodManager V2 (mainnet impl 0x474d4f03... — verified on basescan),
+ * mainnet and testnet share the same PodManager shape:
+ * `mintPodWithREPPO(to, subnetId)` / `mintPodWithPrimaryToken(to, subnetId)`
+ * for minting, and `vote(podId, votes, upVote)` for voting.
+ *
+ * The pre-V2 mainnet variant `mintPod(to, emissionSharePercent)` and the
+ * `publishingFee()` getter are gone — fee logic moved into SubnetManager
+ * (`getAccessFeeREPPO(subnetId)`).
+ *
+ * The vote selector is unchanged (`vote(uint256,uint256,bool)`) but the
+ * second argument's meaning shifted from `subnetId` to `votes` (the voting
+ * power to spend on the call). The CLI now requires `--votes <n>`.
  */
 import { parseAbi } from 'viem';
 
-export const POD_MANAGER_MAINNET_ABI = parseAbi([
-  'function mintPod(address to, uint8 emissionSharePercent) returns (uint256 podId)',
-  'function publishingFee() view returns (uint256)',
-  'function ownerOf(uint256 tokenId) view returns (address)',
-  'function vote(uint256 podId, uint256 subnetId, bool like_)',
-  'function claimPodOwnerEmissions(uint256 podId, uint256 epoch)',
-  'function getPodEmissionsOfEpoch(uint256 epoch, uint256 podId) view returns (uint256)',
-  'function hasPodOwnerClaimedEmissions(uint256 epoch, uint256 podId) view returns (bool)',
-  'function getEpochTotalVotes(uint256 epoch) view returns (uint256)',
-  'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)',
-]);
-
-export const POD_MANAGER_TESTNET_ABI = parseAbi([
+export const POD_MANAGER_ABI = parseAbi([
   'function mintPodWithREPPO(address to, uint256 subnetId) returns (uint256 podId)',
   'function mintPodWithPrimaryToken(address to, uint256 subnetId) returns (uint256 podId)',
-  'function ownerOf(uint256 tokenId) view returns (address)',
-  'function vote(uint256 podId, uint256 subnetId, bool like_)',
+  'function vote(uint256 podId, uint256 votes, bool upVote)',
   'function claimPodOwnerEmissions(uint256 podId, uint256 epoch)',
+  'function claimVoterEmissions(address voter, uint256 podId, uint256 epoch)',
+  'function ownerOf(uint256 tokenId) view returns (address)',
+  'function podValid(uint256 podId) view returns (bool)',
+  'function getPodValidityEpoch(uint256 podId) view returns (uint256)',
+  'function getPodUpVotesOfEpoch(uint256 epoch, uint256 podId) view returns (uint256)',
+  'function getPodDownVotesOfEpoch(uint256 epoch, uint256 podId) view returns (uint256)',
+  'function hasPodOwnerClaimedEmissions(uint256 epoch, uint256 podId) view returns (bool)',
+  'function hasUserClaimedEmissions(uint256 epoch, uint256 podId, address user) view returns (bool)',
   'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)',
 ]);
 
