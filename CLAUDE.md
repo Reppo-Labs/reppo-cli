@@ -39,7 +39,7 @@ src/
     extend-lock.ts             # write — extend a veREPPO lockup
     grant-access.ts            # write — pay REPPO fee, grant datanet access
     lock.ts                    # write — stake REPPO into veREPPO
-    mint-pod.ts                # write — branches on network (--share mainnet, --datanet testnet)
+    mint-pod.ts                # write — mint a pod into a datanet (V2: --datanet on both networks)
     claim-emissions.ts         # write — claim pod emissions for an epoch
     query/
       balance.ts               # canonical read command (uses tryX helpers)
@@ -47,7 +47,7 @@ src/
       pod.ts                   # ownerOf, exists/owner
       voting-power.ts          # votingPowerOf + lockupCount
   chain/
-    abis.ts                    # parseAbi'd ABIs — mainnet vs testnet PodManager param-variant
+    abis.ts                    # parseAbi'd ABIs — single POD_MANAGER_ABI (V2) shared by both networks
     addresses.ts               # pinned addresses per network; TBD placeholders
     contracts.ts               # throwing + tryX() helpers
     clients.ts                 # viem public + wallet client factories
@@ -87,7 +87,7 @@ When writing a new command, ALWAYS:
 
 Three classes have produced production bugs:
 
-- **mainnet vs testnet PodManager param-variant** — mainnet uses `mintPod(to, share)` (canonical production); testnet uses `mintPodWithREPPO(to, subnetId)` (forked from mainnet, subnet logic added for a client experiment). Same method family, different parameters. Use the helpers; never hardcode the ABI.
+- **PodManager V2 — unified shape, vote() second arg meaning** — As of V2 (impl `0x474d4f03…`, verified on basescan), both mainnet and testnet share the same PodManager ABI: `mintPodWithREPPO(to, subnetId)` / `mintPodWithPrimaryToken(to, subnetId)` for minting, and `vote(podId, votes, upVote)` for voting. The pre-V2 mainnet `mintPod(to, share)` + `publishingFee()` shape is gone — fee logic moved into SubnetManager (`getAccessFeeREPPO(subnetId)`). The vote selector is unchanged but the second argument's meaning shifted from `subnetId` to `votes` (voting power to spend); the CLI now takes `--votes <n>`. Use the helpers; never hardcode the ABI.
 - **Decimals** — REPPO/veReppo/ETH are 18; USDC is 6. Mismatch silently shows wrong values.
 - **Idempotency two-phase ordering** — past commits `6b9a227` and `091e45a` were both bugs here. The `markSubmitted-before-receipt-wait` invariant is the load-bearing one.
 

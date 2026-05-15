@@ -65,6 +65,50 @@ describe('decodeRevert', () => {
       expect(result.code).toBe('PUBLISHER_LACKS_SUBNET_ACCESS');
     });
 
+    it('maps 0x11e43eec to POD_NOT_VALID_FOR_EPOCH', () => {
+      const result = decodeRevert(revertedWith('0x11e43eec'));
+      expect(result.code).toBe('POD_NOT_VALID_FOR_EPOCH');
+      expect(result.hint).toContain('voting epoch');
+    });
+
+    it('maps 0x7ded0cc1 to CANNOT_VOTE_FOR_OWN_POD', () => {
+      const result = decodeRevert(revertedWith('0x7ded0cc1'));
+      expect(result.code).toBe('CANNOT_VOTE_FOR_OWN_POD');
+      expect(result.hint).toContain('Publishers cannot vote');
+    });
+
+    it('maps 0x48582090 to VOTER_LACKS_SUBNET_ACCESS', () => {
+      const result = decodeRevert(revertedWith('0x48582090'));
+      expect(result.code).toBe('VOTER_LACKS_SUBNET_ACCESS');
+      expect(result.hint).toContain('grant-access');
+    });
+
+    it('maps 0x076bb706 to INVALID_SUBNET', () => {
+      const result = decodeRevert(revertedWith('0x076bb706'));
+      expect(result.code).toBe('INVALID_SUBNET');
+    });
+
+    it('maps 0x826fbca3 to POD_NOT_FOUND', () => {
+      const result = decodeRevert(revertedWith('0x826fbca3'));
+      expect(result.code).toBe('POD_NOT_FOUND');
+    });
+
+    it('maps 0x2e9fe0d6 to POD_DOES_NOT_EXIST', () => {
+      const result = decodeRevert(revertedWith('0x2e9fe0d6'));
+      expect(result.code).toBe('POD_DOES_NOT_EXIST');
+    });
+
+    it('maps 0xcdad98fd to ZERO_VOTES', () => {
+      const result = decodeRevert(revertedWith('0xcdad98fd'));
+      expect(result.code).toBe('ZERO_VOTES');
+      expect(result.hint).toContain('--votes');
+    });
+
+    it('maps 0x82b42900 to UNAUTHORIZED', () => {
+      const result = decodeRevert(revertedWith('0x82b42900'));
+      expect(result.code).toBe('UNAUTHORIZED');
+    });
+
     it('returns UNKNOWN_REVERT_<sel> for an unrecognized selector', () => {
       const result = decodeRevert(revertedWith('0xdeadbeef'));
       expect(result.code).toBe('UNKNOWN_REVERT_0xdeadbeef');

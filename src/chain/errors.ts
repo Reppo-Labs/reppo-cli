@@ -25,11 +25,37 @@ const SELECTORS: Record<string, DecodedError> = {
     code: 'PUBLISHER_LACKS_SUBNET_ACCESS',
     hint: 'Grant subnet access to the publisher: `reppo grant-access --subnet <id>`.',
   },
-  // Voter-vs-publisher revert observed but not yet name-matched. Keep
-  // the raw selector here so the hint still helps even without the name.
   '0x11e43eec': {
-    code: 'VOTE_REJECTED_PRECONDITION',
-    hint: 'Vote was rejected by an unidentified precondition. Common causes: voter is the pod publisher (publishers cannot vote on their own pods), or the voting window has closed for that epoch.',
+    code: 'POD_NOT_VALID_FOR_EPOCH',
+    hint: 'Pod is not valid for the current voting epoch. Check `reppo query pod <id>` to verify validity; pod publishers may need to republish.',
+  },
+  '0x7ded0cc1': {
+    code: 'CANNOT_VOTE_FOR_OWN_POD',
+    hint: 'Publishers cannot vote on their own pods. Use a different voter EOA — set REPPO_VOTER_PRIVATE_KEY to a wallet that did not mint the pod.',
+  },
+  '0x48582090': {
+    code: 'VOTER_LACKS_SUBNET_ACCESS',
+    hint: 'Voter lacks subnet access. Run `reppo grant-access --datanet <subnetId>` first.',
+  },
+  '0x076bb706': {
+    code: 'INVALID_SUBNET',
+    hint: 'Subnet id does not exist on SubnetManager. Run `reppo list datanets` to find a valid id.',
+  },
+  '0x826fbca3': {
+    code: 'POD_NOT_FOUND',
+    hint: 'Pod id does not exist. Run `reppo query pod <id>` to verify.',
+  },
+  '0x2e9fe0d6': {
+    code: 'POD_DOES_NOT_EXIST',
+    hint: 'Pod id does not exist. Run `reppo query pod <id>` to verify.',
+  },
+  '0xcdad98fd': {
+    code: 'ZERO_VOTES',
+    hint: 'Vote amount cannot be zero. Pass `--votes <n>` with n >= 1.',
+  },
+  '0x82b42900': {
+    code: 'UNAUTHORIZED',
+    hint: 'Caller is not authorized for this action.',
   },
   '0xfb8f41b2': {
     code: 'INSUFFICIENT_ALLOWANCE',

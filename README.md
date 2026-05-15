@@ -2,7 +2,7 @@
 
 Command-line interface for [Reppo](https://reppo.ai) — mint pods, vote, lock REPPO, manage datanets. Built for **AI agents** as the primary user, but humans can use it too.
 
-> **Status:** v0.1.0. `auth`, `query balance`, `query datanet`, `query emissions-due`, `query pod`, `query voting-power`, `claim-emissions`, `extend-lock`, `grant-access`, `lock`, `mint-pod`, `register-agent`, `unlock`, and `vote` ship in this release. The remaining 2 commands (`create-datanet`, `swap`) are scaffolded but not yet wired.
+> **Status:** v0.3.0 — fully wired against PodManager V2 on mainnet. Shipped: `auth`, `query balance`, `query datanet`, `query emissions-due`, `query pod`, `query voting-power`, `list datanets`, `list pods`, `claim-emissions`, `extend-lock`, `grant-access`, `lock`, `mint-pod`, `register-agent`, `unlock`, `vote`. Remaining 2 commands (`create-datanet`, `swap`) are scaffolded but not yet wired.
 
 ## Install
 
@@ -54,8 +54,8 @@ Errors **always** emit JSON on stderr regardless of mode, with a stable `code` f
 
 ### Write
 
-- `reppo vote --pod <id> --subnet <id> --like|--dislike` — cast an on-chain vote
-- `reppo mint-pod` — mint a pod NFT. Mainnet: `--share <0-100>`. Testnet: `--datanet <id> [--token reppo|primary]`. Optional `--to <addr>`.
+- `reppo vote --pod <id> --votes <n> --like|--dislike` — cast a vote on a pod, spending `<n>` voting power
+- `reppo mint-pod --datanet <id> [--token reppo|primary] [--to <addr>]` — mint a pod into a datanet
 - `reppo lock <amount> --duration <seconds>` — lock REPPO into veREPPO for voting power
 - `reppo unlock <lockupId> [--to <addr>]` — withdraw an expired veREPPO lockup, returning the locked REPPO
 - `reppo extend-lock <lockupId> --duration <seconds>` — extend an existing veREPPO lockup
@@ -82,7 +82,7 @@ Also available as a Claude Code skill that teaches agents how to invoke this CLI
 claude plugin install reppo
 ```
 
-The skill ships with the same v0.1.0 alpha feature subset.
+The skill ships with the same v0.3.0 feature subset.
 
 ## License
 

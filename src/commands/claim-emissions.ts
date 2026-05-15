@@ -2,18 +2,15 @@
  * `reppo claim-emissions --pod <id> --epoch <n>` — claim a pod's
  * emissions for a given epoch.
  *
- * Pre-flight (mainnet, full ABI):
+ * Pre-flight (V2, both networks):
  *   1. INVALID_POD_ID, INVALID_EPOCH (parse)
  *   2. NOT_POD_OWNER (ownerOf(podId) !== caller)
  *   3. ALREADY_CLAIMED (hasPodOwnerClaimedEmissions(epoch, podId) === true)
- *   4. NO_EMISSIONS_DUE (getPodEmissionsOfEpoch(epoch, podId) === 0)
  *
- * Pre-flight (testnet, partial ABI):
- *   1. INVALID_POD_ID, INVALID_EPOCH
- *   2. NOT_POD_OWNER
- *   (testnet ABI doesn't include hasPodOwnerClaimedEmissions or
- *    getPodEmissionsOfEpoch — caller bears the cost of a doomed
- *    re-claim. Documented in usage.)
+ * PodManager V2 does not expose a per-pod "emissions due" view, so the
+ * legacy NO_EMISSIONS_DUE pre-flight is gone — if there's nothing to
+ * claim the contract reverts and the structured decoder surfaces the
+ * code.
  *
  * Two-phase write protocol via peekIdempotent.
  *
@@ -21,7 +18,6 @@
  * across different (podId, epoch) is rejected with IDEMPOTENCY_ARGS_MISMATCH.
  */
 import { Option } from 'clipanion';
-import { formatUnits } from 'viem';
 import { BaseCommand } from './_base.js';
 import { cliError, emit } from '../output/format.js';
 import { createClients, nextNonce } from '../chain/clients.js';
@@ -119,33 +115,19 @@ export class ClaimEmissionsCommand extends BaseCommand {
         );
       }
 
-      // Mainnet-only pre-flight: claim status + amount due.
-      // Testnet's PodManager ABI doesn't expose these views (the testnet fork is leaner).
-      let amountDue: bigint | null = null;
-      if (cfg.network === 'mainnet') {
-        const [alreadyClaimed, due] = await Promise.all([
-          clients.publicClient.readContract({
-            address: pm.address, abi: pm.abi, functionName: 'hasPodOwnerClaimedEmissions', args: [epoch, podId],
-          }),
-          clients.publicClient.readContract({
-            address: pm.address, abi: pm.abi, functionName: 'getPodEmissionsOfEpoch', args: [epoch, podId],
-          }),
-        ]);
-        if (alreadyClaimed) {
-          throw cliError(
-            'ALREADY_CLAIMED',
-            `Pod ${podId} emissions for epoch ${epoch} have already been claimed.`,
-            'Nothing to do — pick a different epoch.',
-          );
-        }
-        if (due === 0n) {
-          throw cliError(
-            'NO_EMISSIONS_DUE',
-            `Pod ${podId} has no emissions due for epoch ${epoch}.`,
-            'Try a different epoch (e.g. one where the pod received votes).',
-          );
-        }
-        amountDue = due;
+      // Pre-flight: already-claimed check. PodManager V2 does not
+      // expose a per-pod "emissions due" view, so we no longer pre-
+      // flight NO_EMISSIONS_DUE — the contract reverts cleanly if
+      // there's nothing to claim and the decoder surfaces the code.
+      const alreadyClaimed = await clients.publicClient.readContract({
+        address: pm.address, abi: pm.abi, functionName: 'hasPodOwnerClaimedEmissions', args: [epoch, podId],
+      });
+      if (alreadyClaimed) {
+        throw cliError(
+          'ALREADY_CLAIMED',
+          `Pod ${podId} emissions for epoch ${epoch} have already been claimed.`,
+          'Nothing to do — pick a different epoch.',
+        );
       }
 
       if (this.dryRun) {
@@ -161,9 +143,7 @@ export class ClaimEmissionsCommand extends BaseCommand {
           podId: podId.toString(),
           epoch: epoch.toString(),
           owner,
-          ...(amountDue !== null
-            ? { amountDue: { raw: amountDue.toString(), formatted: formatUnits(amountDue, 18) } }
-            : { amountDue: { unavailable: 'testnet ABI does not expose getPodEmissionsOfEpoch' } }),
+          amountDue: { unavailable: 'PodManager V2 does not expose a per-pod emissions-due view' },
           gas: sim.request.gas?.toString() ?? null,
         });
         return 0;
@@ -198,9 +178,7 @@ export class ClaimEmissionsCommand extends BaseCommand {
         txHash: tx,
         podId: podId.toString(),
         epoch: epoch.toString(),
-        ...(amountDue !== null
-          ? { amountClaimed: { raw: amountDue.toString(), formatted: formatUnits(amountDue, 18) } }
-          : { amountClaimed: { unavailable: 'testnet ABI does not expose getPodEmissionsOfEpoch' } }),
+        amountClaimed: { unavailable: 'PodManager V2 does not expose a per-pod emissions-due view' },
         block: receipt.blockNumber.toString(),
         basescanUrl: cfg.network === 'mainnet'
           ? `https://basescan.org/tx/${tx}`
@@ -208,12 +186,9 @@ export class ClaimEmissionsCommand extends BaseCommand {
       };
       if (this.idempotencyKey) await markConfirmed(this.idempotencyKey, COMMAND, args, result, tx);
 
-      const amountStr = amountDue !== null
-        ? `${formatUnits(amountDue, 18)} REPPO`
-        : '(amount unknown — testnet)';
       emit(result, [
         `✓ Claimed pod ${podId} emissions for epoch ${epoch}`,
-        `  amount: ${amountStr}`,
+        `  amount: (unknown — V2 has no per-pod emissions-due view)`,
         `  tx: ${result.basescanUrl}`,
         `  block: ${receipt.blockNumber}`,
       ]);
