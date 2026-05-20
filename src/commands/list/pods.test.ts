@@ -9,7 +9,7 @@
  * The state/db saveSession() side of getOrRefreshSession is short-
  * circuited by mocking, so these tests don't touch ~/.reppo/cli-state.json.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // Hoisted so the ListPodsCommand import below sees them.
 const getOrRefreshSession = vi.fn<(...args: unknown[]) => Promise<unknown>>();
@@ -81,6 +81,11 @@ beforeEach(() => {
   }) as never);
 });
 
+afterEach(() => {
+  // Undo any vi.stubGlobal('fetch', ...) from --all tests.
+  vi.unstubAllGlobals();
+});
+
 // Import AFTER mocks are wired so the command picks them up.
 const { ListPodsCommand } = await import('./pods.js');
 
@@ -90,6 +95,7 @@ interface CommandLike {
   network: string | undefined;
   rpcUrl: string | undefined;
   json: boolean;
+  all: boolean;
   includeEmissions: boolean;
   datanet: string | undefined;
   limit: string | undefined;
@@ -102,6 +108,7 @@ function makeCommand(opts: {
   network?: string;
   apiUrl?: string;
   json?: boolean;
+  all?: boolean;
   includeEmissions?: boolean;
   datanet?: string;
   limit?: string;
@@ -130,6 +137,7 @@ function makeCommand(opts: {
   cmd.network = undefined;
   cmd.rpcUrl = undefined;
   cmd.json = opts.json ?? true;
+  cmd.all = opts.all ?? false;
   cmd.includeEmissions = opts.includeEmissions ?? false;
   cmd.datanet = opts.datanet;
   cmd.limit = opts.limit;
@@ -475,6 +483,178 @@ describe('list pods', () => {
       const err = parseErr(capturedErrorJson);
       expect(err.code).toBe('INVALID_DATANET');
       expect(exitCode).toBe(1);
+    } finally {
+      restoreEnv();
+    }
+  });
+});
+
+// ── --all (community scope) ─────────────────────────────────────────────
+//
+// `--all` switches to the public, unauthenticated API. publicGet uses the
+// global `fetch`, so these tests stub `fetch` (not platformGet) and route
+// the two endpoints (/subnets, /pods) by URL substring.
+
+interface CommunityPodOut {
+  podId: string;
+  name: string;
+  creator: string;
+  datanetId: string | null;
+  upVotes: string;
+  downVotes: string;
+}
+interface CommunityResult {
+  scope: string;
+  network: string;
+  datanet?: string;
+  pods: CommunityPodOut[];
+  count: number;
+}
+
+function communityPod(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    name: 'A community pod',
+    tokenId: 325,
+    privateSubnetId: 'cuid-default',
+    url: 'https://example.com/pod',
+    podValidityEpoch: 94,
+    cumulativeUpVotesVolume: 57882,
+    cumulativeDownVotesVolume: 0,
+    creator: { username: 'someone' },
+    ...overrides,
+  };
+}
+
+/** Route the two public endpoints `--all` hits, by URL substring. */
+function stubPublicApi(opts: {
+  pods: Record<string, unknown>[];
+  subnets?: { id: string; tokenId: string }[];
+  podsStatus?: number;
+}): void {
+  const subnets = opts.subnets ?? [{ id: 'cuid-default', tokenId: '19' }];
+  vi.stubGlobal('fetch', vi.fn((url: string) => {
+    const body = url.includes('/subnets')
+      ? { data: { subnets } }
+      : { data: { pods: opts.pods } };
+    return Promise.resolve(new Response(JSON.stringify(body), {
+      status: url.includes('/subnets') ? 200 : (opts.podsStatus ?? 200),
+      headers: { 'Content-Type': 'application/json' },
+    }));
+  }));
+}
+
+describe('list pods --all (community scope)', () => {
+  it('lists pods from any wallet via the public API — no private key needed', async () => {
+    const { cmd, restoreEnv } = makeCommand({ all: true, pk: undefined });
+    try {
+      stubPublicApi({
+        pods: [
+          communityPod({ tokenId: 1, name: 'One' }),
+          communityPod({ tokenId: 2, name: 'Two' }),
+        ],
+      });
+      const code = await cmd.execute();
+      expect(code).toBe(0);
+      const out = JSON.parse(capturedJson!) as CommunityResult;
+      expect(out.scope).toBe('community');
+      expect(out.count).toBe(2);
+      expect(out.pods.map((p) => p.podId)).toEqual(['1', '2']);
+      // Owner-scope platform calls must NOT happen in --all mode.
+      expect(getOrRefreshSession).not.toHaveBeenCalled();
+      expect(platformGet).not.toHaveBeenCalled();
+    } finally {
+      restoreEnv();
+    }
+  });
+
+  it('maps privateSubnetId CUID to a numeric datanetId', async () => {
+    const { cmd, restoreEnv } = makeCommand({ all: true });
+    try {
+      stubPublicApi({
+        pods: [communityPod({ tokenId: 7, privateSubnetId: 'cuid-A' })],
+        subnets: [{ id: 'cuid-A', tokenId: '19' }],
+      });
+      await cmd.execute();
+      const out = JSON.parse(capturedJson!) as CommunityResult;
+      expect(out.pods[0]!.datanetId).toBe('19');
+    } finally {
+      restoreEnv();
+    }
+  });
+
+  it('--all --datanet 19 returns only pods in that datanet', async () => {
+    const { cmd, restoreEnv } = makeCommand({ all: true, datanet: '19' });
+    try {
+      stubPublicApi({
+        pods: [
+          communityPod({ tokenId: 1, privateSubnetId: 'cuid-A' }),
+          communityPod({ tokenId: 2, privateSubnetId: 'cuid-B' }),
+          communityPod({ tokenId: 3, privateSubnetId: 'cuid-A' }),
+        ],
+        subnets: [
+          { id: 'cuid-A', tokenId: '19' },
+          { id: 'cuid-B', tokenId: '20' },
+        ],
+      });
+      const code = await cmd.execute();
+      expect(code).toBe(0);
+      const out = JSON.parse(capturedJson!) as CommunityResult;
+      expect(out.datanet).toBe('19');
+      expect(out.pods.map((p) => p.podId)).toEqual(['1', '3']);
+    } finally {
+      restoreEnv();
+    }
+  });
+
+  it('--all --datanet with an unknown id exits DATANET_NOT_FOUND', async () => {
+    const { cmd, restoreEnv } = makeCommand({ all: true, datanet: '999' });
+    try {
+      stubPublicApi({ pods: [communityPod()], subnets: [{ id: 'cuid-A', tokenId: '19' }] });
+      await expect(cmd.execute()).rejects.toThrow(/__exit_/);
+      expect(parseErr(capturedErrorJson).code).toBe('DATANET_NOT_FOUND');
+    } finally {
+      restoreEnv();
+    }
+  });
+
+  it('--all with --include-emissions exits INCOMPATIBLE_FLAGS before any fetch', async () => {
+    const { cmd, restoreEnv } = makeCommand({ all: true, includeEmissions: true });
+    try {
+      const fetchSpy = vi.fn();
+      vi.stubGlobal('fetch', fetchSpy);
+      await expect(cmd.execute()).rejects.toThrow(/__exit_/);
+      expect(parseErr(capturedErrorJson).code).toBe('INCOMPATIBLE_FLAGS');
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      restoreEnv();
+    }
+  });
+
+  it('--all emits vote volumes as strings and podId from the on-chain tokenId', async () => {
+    const { cmd, restoreEnv } = makeCommand({ all: true });
+    try {
+      stubPublicApi({
+        pods: [communityPod({ tokenId: 325, cumulativeUpVotesVolume: 57882, cumulativeDownVotesVolume: 12 })],
+      });
+      await cmd.execute();
+      const out = JSON.parse(capturedJson!) as CommunityResult;
+      expect(out.pods[0]!.podId).toBe('325');
+      expect(out.pods[0]!.upVotes).toBe('57882');
+      expect(out.pods[0]!.downVotes).toBe('12');
+    } finally {
+      restoreEnv();
+    }
+  });
+
+  it('--all --limit caps the result set', async () => {
+    const { cmd, restoreEnv } = makeCommand({ all: true, limit: '2' });
+    try {
+      stubPublicApi({
+        pods: Array.from({ length: 5 }, (_, i) => communityPod({ tokenId: i + 1 })),
+      });
+      await cmd.execute();
+      const out = JSON.parse(capturedJson!) as CommunityResult;
+      expect(out.count).toBe(2);
     } finally {
       restoreEnv();
     }
