@@ -2,7 +2,7 @@
 
 Command-line interface for [Reppo](https://reppo.ai) — mint pods, vote, lock REPPO, manage datanets. Built for **AI agents** as the primary user, but humans can use it too.
 
-> **Status:** v0.3.0 — fully wired against PodManager V2 on mainnet. Shipped: `auth`, `query balance`, `query datanet`, `query emissions-due`, `query pod`, `query voting-power`, `list datanets`, `list pods`, `claim-emissions`, `extend-lock`, `grant-access`, `lock`, `mint-pod`, `register-agent`, `unlock`, `vote`. Remaining 2 commands (`create-datanet`, `swap`) are scaffolded but not yet wired.
+> **Status:** v0.4.0 — fully wired against PodManager V2 on mainnet. Shipped: `auth`, `query balance`, `query datanet`, `query emissions-due`, `query pod`, `query voting-power`, `list datanets`, `list pods` (incl. `--all`), `claim-emissions`, `extend-lock`, `grant-access`, `lock`, `mint-pod`, `register-agent`, `unlock`, `vote`. Remaining 2 commands (`create-datanet`, `swap`) are scaffolded but not yet wired.
 
 ## Install
 
@@ -51,6 +51,7 @@ Errors **always** emit JSON on stderr regardless of mode, with a stable `code` f
 
 - `reppo list datanets [--status ACTIVE|ALL] [--token-symbol <sym>] [--limit <n>]` — list all datanets on the platform (public endpoint, no auth required)
 - `reppo list pods [--datanet <id>] [--include-emissions] [--limit <n>]` — list pods owned by the configured wallet, optionally scoped to a single datanet (uses platform API)
+- `reppo list pods --all [--datanet <id>] [--limit <n>]` — list pods published by *any* wallet, so a voter can discover pods to vote on (public endpoint, no auth required); each row's `podId` feeds straight into `reppo vote --pod <podId>`
 
 ### Write
 
