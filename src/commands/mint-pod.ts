@@ -27,6 +27,8 @@ import { cliError, emit } from '../output/format.js';
 import { createClients, nextNonce } from '../chain/clients.js';
 import { podManager, subnetManager } from '../chain/contracts.js';
 import { decodeRevert } from '../chain/errors.js';
+import { handleSubmittedCacheDecision } from './write-cache.js';
+import { waitForWriteReceipt } from '../chain/receipt.js';
 import { begin, markSubmitted, markConfirmed, markFailed, peekIdempotent } from '../state/idempotency.js';
 
 const COMMAND = 'mint-pod';
@@ -111,10 +113,19 @@ export class MintPodCommand extends BaseCommand {
         return 0;
       }
       if (decision.kind === 'return-submitted') {
-        emit({ ...decision.result, idempotent: true, status: 'submitted' },
-          [`(cached, submitted but not confirmed yet) tx: ${decision.txHash ?? 'n/a'}`,
-           `Re-run after the tx confirms, or check the explorer.`]);
-        return 0;
+        const clients = createClients({
+          network: cfg.network,
+          privateKey: pk,
+          ...(cfg.rpcUrl ? { rpcUrl: cfg.rpcUrl } : {}),
+        });
+        return handleSubmittedCacheDecision(decision, {
+          idempotencyKey: this.idempotencyKey,
+          command: COMMAND,
+          args,
+          network: cfg.network,
+          publicClient: clients.publicClient,
+          buildResult: () => ({ datanetId: datanetId.toString(), token: this.token, to: target }),
+        });
       }
 
       const pm = podManager(cfg.network);
@@ -176,7 +187,7 @@ export class MintPodCommand extends BaseCommand {
 
       if (this.idempotencyKey) await markSubmitted(this.idempotencyKey, COMMAND, args, tx);
 
-      const receipt = await clients.publicClient.waitForTransactionReceipt({ hash: tx, timeout: 120_000 });
+      const receipt = await waitForWriteReceipt(clients.publicClient, tx);
       if (receipt.status === 'reverted') {
         if (this.idempotencyKey) await markFailed(this.idempotencyKey, COMMAND, args, 'TX_REVERTED', tx);
         throw cliError('TX_REVERTED', `mint-pod tx reverted: ${tx}`);

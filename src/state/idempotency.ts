@@ -35,6 +35,8 @@ import { cliError } from '../output/format.js';
 
 export type { IdempotencyEntry, IdempotencyStatus };
 
+export const PENDING_STALE_MS = 10 * 60 * 1000;
+
 /**
  * Decision returned by `peekIdempotent` so write commands can decide what
  * to do *before* spending gas:
@@ -145,12 +147,16 @@ export async function peekIdempotent<R>(
       return { kind: 'return-confirmed', result: cached.result as R, txHash: cached.txHash };
     case 'submitted':
       return { kind: 'return-submitted', result: cached.result as R, txHash: cached.txHash };
-    case 'pending':
+    case 'pending': {
+      if (Date.now() - cached.updatedAt > PENDING_STALE_MS) {
+        return { kind: 'proceed' };
+      }
       throw cliError(
         'IDEMPOTENCY_IN_FLIGHT',
         `Idempotency key "${key}" is in 'pending' state — another invocation is mid-flight.`,
         'Wait for the in-flight invocation to finish, or use a fresh key.',
       );
+    }
     case 'failed':
       if (cached.txHash) {
         throw cliError(
