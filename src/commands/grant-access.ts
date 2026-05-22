@@ -110,7 +110,21 @@ export class GrantAccessCommand extends BaseCommand {
           args,
           network: cfg.network,
           publicClient: clients.publicClient,
-          buildResult: () => ({ datanetId: datanetId.toString(), to: target }),
+          buildResult: async () => {
+            try {
+              const smLocal = subnetManager(cfg.network);
+              const fee = await clients.publicClient.readContract({
+                address: smLocal.address, abi: smLocal.abi, functionName: 'getAccessFeeREPPO', args: [datanetId],
+              });
+              return {
+                datanetId: datanetId.toString(),
+                to: target,
+                feeREPPO: { raw: fee.toString(), formatted: formatUnits(fee, 18) },
+              };
+            } catch {
+              return { datanetId: datanetId.toString(), to: target };
+            }
+          },
         });
       }
 
@@ -206,7 +220,13 @@ export class GrantAccessCommand extends BaseCommand {
       }
 
       // markSubmitted BEFORE waitForReceipt — closes the retry-resend window.
-      if (this.idempotencyKey) await markSubmitted(this.idempotencyKey, COMMAND, args, tx);
+      if (this.idempotencyKey) {
+        await markSubmitted(this.idempotencyKey, COMMAND, args, tx, {
+          datanetId: datanetId.toString(),
+          to: target,
+          feeREPPO: { raw: fee.toString(), formatted: formatUnits(fee, 18) },
+        });
+      }
 
       const receipt = await waitForWriteReceipt(clients.publicClient, tx);
       if (receipt.status === 'reverted') {

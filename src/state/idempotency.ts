@@ -194,13 +194,14 @@ export async function markSubmitted(
   command: string,
   args: Record<string, unknown>,
   txHash: string,
+  result: Record<string, unknown> = {},
 ): Promise<void> {
   const now = Date.now();
   await upsertIdempotent(key, {
     command,
     argsFingerprint: fingerprintArgs(args),
     status: 'submitted',
-    result: { txHash },
+    result: { ...result, txHash },
     txHash,
     createdAt: now,
     updatedAt: now,

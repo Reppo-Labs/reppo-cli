@@ -22,7 +22,8 @@ export async function reconcileSubmittedCache(
   command: string,
   args: Record<string, unknown>,
   txHash: `0x${string}`,
-  buildResult: (receipt: TransactionReceipt) => Record<string, unknown>,
+  buildResult: (receipt: TransactionReceipt) => Record<string, unknown> | Promise<Record<string, unknown>>,
+  submittedResult: Record<string, unknown> = {},
 ): Promise<Record<string, unknown> | null> {
   let receipt: TransactionReceipt;
   try {
@@ -42,7 +43,8 @@ export async function reconcileSubmittedCache(
   }
 
   const result = {
-    ...buildResult(receipt),
+    ...submittedResult,
+    ...await buildResult(receipt),
     txHash,
     block: receipt.blockNumber.toString(),
     basescanUrl: basescanTxUrl(network, txHash),
@@ -59,7 +61,7 @@ export async function handleSubmittedCacheDecision(
     args: Record<string, unknown>;
     network: Network;
     publicClient: Pick<PublicClient, 'getTransactionReceipt'>;
-    buildResult: (receipt: TransactionReceipt) => Record<string, unknown>;
+    buildResult: (receipt: TransactionReceipt) => Record<string, unknown> | Promise<Record<string, unknown>>;
   },
 ): Promise<number> {
   const txHash = decision.txHash;
@@ -80,6 +82,7 @@ export async function handleSubmittedCacheDecision(
       opts.args,
       txHash as `0x${string}`,
       opts.buildResult,
+      decision.result,
     );
     if (reconciled) {
       emit(

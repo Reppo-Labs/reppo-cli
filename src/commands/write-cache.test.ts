@@ -46,4 +46,27 @@ describe('reconcileSubmittedCache', () => {
     const entry = await getIdempotent('rk', COMMAND, args);
     expect(entry?.status).toBe('confirmed');
   });
+
+  it('preserves submitted payload fields when reconciling', async () => {
+    await begin('rk2', COMMAND, args);
+    await markSubmitted('rk2', COMMAND, args, txHash, { podId: '34', votes: '10', like: true, voterPower: '123' });
+
+    const receipt = {
+      status: 'success',
+      blockNumber: 43n,
+    } as TransactionReceipt;
+
+    const client = {
+      getTransactionReceipt: async () => receipt,
+    } as unknown as PublicClient;
+
+    const result = await reconcileSubmittedCache(
+      client, 'mainnet', 'rk2', COMMAND, args, txHash,
+      () => ({ podId: '34', votes: '10', like: true }),
+      { podId: '34', votes: '10', like: true, voterPower: '123' },
+    );
+
+    expect(result?.voterPower).toBe('123');
+    expect(result?.block).toBe('43');
+  });
 });

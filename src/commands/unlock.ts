@@ -107,7 +107,22 @@ export class UnlockCommand extends BaseCommand {
           args,
           network: cfg.network,
           publicClient: clients.publicClient,
-          buildResult: () => ({ lockupId: args.lockupId, to: args.to }),
+          buildResult: async () => {
+            try {
+              const vrLocal = veReppo(cfg.network);
+              const lockup = await clients.publicClient.readContract({
+                address: vrLocal.address, abi: vrLocal.abi, functionName: 'lockupData', args: [lockupId],
+              });
+              const [amount] = lockup;
+              return {
+                lockupId: args.lockupId,
+                to: args.to,
+                amount: { raw: amount.toString(), formatted: formatUnits(amount, 18) },
+              };
+            } catch {
+              return { lockupId: args.lockupId, to: args.to };
+            }
+          },
         });
       }
 
@@ -189,7 +204,13 @@ export class UnlockCommand extends BaseCommand {
       }
 
       // markSubmitted BEFORE waitForReceipt — closes the retry-resend window.
-      if (this.idempotencyKey) await markSubmitted(this.idempotencyKey, COMMAND, args, tx);
+      if (this.idempotencyKey) {
+        await markSubmitted(this.idempotencyKey, COMMAND, args, tx, {
+          lockupId: lockupId.toString(),
+          to: target,
+          amount: { raw: amount.toString(), formatted: formatUnits(amount, 18) },
+        });
+      }
 
       const receipt = await waitForWriteReceipt(clients.publicClient, tx);
       if (receipt.status === 'reverted') {

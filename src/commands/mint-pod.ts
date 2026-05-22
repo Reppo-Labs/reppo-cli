@@ -185,7 +185,13 @@ export class MintPodCommand extends BaseCommand {
         throw cliError(decoded.code, 'mint-pod tx failed to submit', decoded.hint);
       }
 
-      if (this.idempotencyKey) await markSubmitted(this.idempotencyKey, COMMAND, args, tx);
+      if (this.idempotencyKey) {
+        await markSubmitted(this.idempotencyKey, COMMAND, args, tx, {
+          datanetId: datanetId.toString(),
+          token: this.token,
+          to: target,
+        });
+      }
 
       const receipt = await waitForWriteReceipt(clients.publicClient, tx);
       if (receipt.status === 'reverted') {

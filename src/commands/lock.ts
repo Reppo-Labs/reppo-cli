@@ -110,7 +110,25 @@ export class LockCommand extends BaseCommand {
           args,
           network: cfg.network,
           publicClient: clients.publicClient,
-          buildResult: () => ({ amount: { raw: amount.toString(), formatted: formatUnits(amount, 18) }, duration: duration.toString() }),
+          buildResult: async () => {
+            try {
+              const vrLocal = veReppo(cfg.network);
+              const [previewPower, previewEnd] = await clients.publicClient.readContract({
+                address: vrLocal.address, abi: vrLocal.abi, functionName: 'previewPoints', args: [amount, duration],
+              });
+              return {
+                amount: { raw: amount.toString(), formatted: formatUnits(amount, 18) },
+                duration: duration.toString(),
+                votingPowerGained: { raw: previewPower.toString(), formatted: formatUnits(previewPower, 18) },
+                expiresAt: previewEnd.toString(),
+              };
+            } catch {
+              return {
+                amount: { raw: amount.toString(), formatted: formatUnits(amount, 18) },
+                duration: duration.toString(),
+              };
+            }
+          },
         });
       }
 
@@ -197,7 +215,14 @@ export class LockCommand extends BaseCommand {
       }
 
       // markSubmitted BEFORE waitForReceipt — closes the retry-resend window.
-      if (this.idempotencyKey) await markSubmitted(this.idempotencyKey, COMMAND, args, tx);
+      if (this.idempotencyKey) {
+        await markSubmitted(this.idempotencyKey, COMMAND, args, tx, {
+          amount: { raw: amount.toString(), formatted: formatUnits(amount, 18) },
+          duration: duration.toString(),
+          votingPowerGained: { raw: previewPower.toString(), formatted: formatUnits(previewPower, 18) },
+          expiresAt: previewEnd.toString(),
+        });
+      }
 
       const receipt = await waitForWriteReceipt(clients.publicClient, tx);
       if (receipt.status === 'reverted') {

@@ -126,7 +126,17 @@ export class VoteCommand extends BaseCommand {
           args,
           network: cfg.network,
           publicClient: clients.publicClient,
-          buildResult: () => ({ podId: args.podId, votes: args.votes, like: args.like }),
+          buildResult: async () => {
+            try {
+              const vrLocal = veReppo(cfg.network);
+              const voterPower = await clients.publicClient.readContract({
+                address: vrLocal.address, abi: vrLocal.abi, functionName: 'votingPowerOf', args: [clients.account.address],
+              });
+              return { podId: args.podId, votes: args.votes, like: args.like, voterPower: voterPower.toString() };
+            } catch {
+              return { podId: args.podId, votes: args.votes, like: args.like };
+            }
+          },
         });
       }
 
@@ -202,7 +212,14 @@ export class VoteCommand extends BaseCommand {
 
       // Persist 'submitted' BEFORE waiting for the receipt — that's the
       // window where an agent retry could otherwise re-send.
-      if (this.idempotencyKey) await markSubmitted(this.idempotencyKey, COMMAND, args, tx);
+      if (this.idempotencyKey) {
+        await markSubmitted(this.idempotencyKey, COMMAND, args, tx, {
+          podId: podId.toString(),
+          votes: votes.toString(),
+          like: likeBool,
+          voterPower: power.toString(),
+        });
+      }
 
       const receipt = await waitForWriteReceipt(clients.publicClient, tx);
       if (receipt.status === 'reverted') {

@@ -97,7 +97,11 @@ export class ClaimEmissionsCommand extends BaseCommand {
           args,
           network: cfg.network,
           publicClient: clients.publicClient,
-          buildResult: () => ({ podId: podId.toString(), epoch: epoch.toString() }),
+          buildResult: () => ({
+            podId: podId.toString(),
+            epoch: epoch.toString(),
+            amountClaimed: { unavailable: 'PodManager V2 does not expose a per-pod emissions-due view' },
+          }),
         });
       }
 
@@ -177,7 +181,13 @@ export class ClaimEmissionsCommand extends BaseCommand {
       }
 
       // markSubmitted BEFORE waitForReceipt — closes the retry-resend window.
-      if (this.idempotencyKey) await markSubmitted(this.idempotencyKey, COMMAND, args, tx);
+      if (this.idempotencyKey) {
+        await markSubmitted(this.idempotencyKey, COMMAND, args, tx, {
+          podId: podId.toString(),
+          epoch: epoch.toString(),
+          amountClaimed: { unavailable: 'PodManager V2 does not expose a per-pod emissions-due view' },
+        });
+      }
 
       const receipt = await waitForWriteReceipt(clients.publicClient, tx);
       if (receipt.status === 'reverted') {

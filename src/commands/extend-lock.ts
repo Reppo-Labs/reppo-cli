@@ -97,7 +97,25 @@ export class ExtendLockCommand extends BaseCommand {
           args,
           network: cfg.network,
           publicClient: clients.publicClient,
-          buildResult: () => ({ lockupId: lockupId.toString(), duration: duration.toString() }),
+          buildResult: async () => {
+            try {
+              const vrLocal = veReppo(cfg.network);
+              const lockupAfter = await clients.publicClient.readContract({
+                address: vrLocal.address, abi: vrLocal.abi, functionName: 'lockupData', args: [lockupId],
+              });
+              return {
+                lockupId: lockupId.toString(),
+                durationAdded: duration.toString(),
+                lockupAfter: {
+                  amount: lockupAfter[0].toString(),
+                  expiresAt: lockupAfter[1].toString(),
+                  votingPower: lockupAfter[3].toString(),
+                },
+              };
+            } catch {
+              return { lockupId: lockupId.toString(), durationAdded: duration.toString() };
+            }
+          },
         });
       }
 
@@ -189,7 +207,17 @@ export class ExtendLockCommand extends BaseCommand {
       }
 
       // markSubmitted BEFORE waitForReceipt — closes the retry-resend window.
-      if (this.idempotencyKey) await markSubmitted(this.idempotencyKey, COMMAND, args, tx);
+      if (this.idempotencyKey) {
+        await markSubmitted(this.idempotencyKey, COMMAND, args, tx, {
+          lockupId: lockupId.toString(),
+          durationAdded: duration.toString(),
+          lockupBefore: {
+            amount: lockupBefore[0].toString(),
+            expiresAt: lockupBefore[1].toString(),
+            votingPower: lockupBefore[3].toString(),
+          },
+        });
+      }
 
       const receipt = await waitForWriteReceipt(clients.publicClient, tx);
       if (receipt.status === 'reverted') {
