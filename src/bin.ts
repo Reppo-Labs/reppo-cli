@@ -4,6 +4,7 @@
  * via clipanion's runExit.
  */
 import { Cli, Builtins } from 'clipanion';
+import { ApproveCommand } from './commands/approve.js';
 import { AuthCommand } from './commands/auth.js';
 import { ClaimEmissionsCommand } from './commands/claim-emissions.js';
 import { ExtendLockCommand } from './commands/extend-lock.js';
@@ -31,6 +32,7 @@ const cli = new Cli({
 cli.register(Builtins.HelpCommand);
 cli.register(Builtins.VersionCommand);
 
+cli.register(ApproveCommand);
 cli.register(AuthCommand);
 cli.register(ClaimEmissionsCommand);
 cli.register(ExtendLockCommand);

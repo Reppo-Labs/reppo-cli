@@ -143,6 +143,44 @@ describe('extend-lock', () => {
   });
 });
 
+describe('approve', () => {
+  it('rejects invalid --token with INVALID_TOKEN', async () => {
+    const r = await runCli(['approve', '--spender', 've-reppo', '--token', 'eth', ...JSON_FLAG], { REPPO_PRIVATE_KEY: FAKE_PK, REPPO_NETWORK: 'testnet' });
+    expect(r.exitCode).not.toBe(0);
+    expect(parseError(r.stderr).code).toBe('INVALID_TOKEN');
+  });
+
+  it('rejects unknown --spender alias with INVALID_SPENDER', async () => {
+    const r = await runCli(['approve', '--spender', 'not-a-real-alias', ...JSON_FLAG], { REPPO_PRIVATE_KEY: FAKE_PK, REPPO_NETWORK: 'testnet' });
+    expect(r.exitCode).not.toBe(0);
+    expect(parseError(r.stderr).code).toBe('INVALID_SPENDER');
+  });
+
+  it('rejects malformed 0x address with INVALID_SPENDER', async () => {
+    const r = await runCli(['approve', '--spender', '0xnothex', ...JSON_FLAG], { REPPO_PRIVATE_KEY: FAKE_PK, REPPO_NETWORK: 'testnet' });
+    expect(r.exitCode).not.toBe(0);
+    expect(parseError(r.stderr).code).toBe('INVALID_SPENDER');
+  });
+
+  it('rejects non-numeric, non-"max" --amount with INVALID_AMOUNT', async () => {
+    const r = await runCli(['approve', '--spender', 've-reppo', '--amount', 'lots', ...JSON_FLAG], { REPPO_PRIVATE_KEY: FAKE_PK, REPPO_NETWORK: 'testnet' });
+    expect(r.exitCode).not.toBe(0);
+    expect(parseError(r.stderr).code).toBe('INVALID_AMOUNT');
+  });
+
+  it('rejects zero --amount with INVALID_AMOUNT', async () => {
+    const r = await runCli(['approve', '--spender', 've-reppo', '--amount', '0', ...JSON_FLAG], { REPPO_PRIVATE_KEY: FAKE_PK, REPPO_NETWORK: 'testnet' });
+    expect(r.exitCode).not.toBe(0);
+    expect(parseError(r.stderr).code).toBe('INVALID_AMOUNT');
+  });
+
+  it('rejects missing private key with MISSING_PRIVATE_KEY', async () => {
+    const r = await runCli(['approve', '--spender', 've-reppo', ...JSON_FLAG]);
+    expect(r.exitCode).not.toBe(0);
+    expect(parseError(r.stderr).code).toBe('MISSING_PRIVATE_KEY');
+  });
+});
+
 describe('grant-access', () => {
   it('rejects non-numeric --datanet with INVALID_DATANET_ID', async () => {
     const r = await runCli(['grant-access', '--datanet', 'abc', ...JSON_FLAG], { REPPO_PRIVATE_KEY: FAKE_PK, REPPO_NETWORK: 'testnet' });
