@@ -25,7 +25,8 @@ npm run build        # tsc -p tsconfig.build.json — emits dist/bin.js
 | `REPPO_VOTER_PRIVATE_KEY` | `vote` only (separate from publisher EOA) |
 | `REPPO_NETWORK` | `mainnet` (default) or `testnet` |
 | `REPPO_RPC_URL` | Override RPC endpoint |
-| `REPPO_API_URL` / `REPPO_API_KEY` | Reserved for `register-agent` / `create-datanet` (not yet implemented) |
+| `REPPO_API_URL` | `auth` (api.reppo.xyz endpoints) and reserved for `create-datanet`; `register-agent` uses a hardcoded reppo.ai/api/v1 host |
+| `REPPO_API_KEY` | Bearer token for api.reppo.xyz endpoints (obtained via `auth`) |
 | `REPPO_STATE_PATH` | Override `~/.reppo/cli-state.json` (used in tests) |
 
 ## Project shape
@@ -35,23 +36,32 @@ src/
   bin.ts                       # entry point — registers every command
   commands/
     _base.ts                   # BaseCommand (--network, --json, --rpc-url, loadConfig, handleError)
+    auth.ts                    # Privy wallet-auth flow for api.reppo.xyz endpoints
     vote.ts                    # canonical write command (peekIdempotent + two-phase)
     extend-lock.ts             # write — extend a veREPPO lockup
     grant-access.ts            # write — pay REPPO fee, grant datanet access
     lock.ts                    # write — stake REPPO into veREPPO
     mint-pod.ts                # write — mint a pod into a datanet (V2: --datanet on both networks)
     claim-emissions.ts         # write — claim pod emissions for an epoch
+    unlock.ts                  # write — withdraw an expired veREPPO lockup
+    register-agent.ts          # platform POST /agents/register (no auth) → { id, apiKey }
+    write-cache.ts             # handleSubmittedCacheDecision — auto-reconcile submitted → confirmed on retry
+    list/
+      datanets.ts              # list all datanets (reppo.ai catalog)
+      pods.ts                  # list pods (--datanet filter; --all for community-pod discovery)
     query/
       balance.ts               # canonical read command (uses tryX helpers)
       datanet.ts               # validity + REPPO fee + caller-access
       pod.ts                   # ownerOf, exists/owner
       voting-power.ts          # votingPowerOf + lockupCount
+      emissions-due.ts         # epoch emissions claimable for a pod
   chain/
     abis.ts                    # parseAbi'd ABIs — single POD_MANAGER_ABI (V2) shared by both networks
     addresses.ts               # pinned addresses per network; TBD placeholders
     contracts.ts               # throwing + tryX() helpers
     clients.ts                 # viem public + wallet client factories
     errors.ts                  # decodeRevert (selector → code+hint map)
+    receipt.ts                 # waitForWriteReceipt — maps viem timeout → TX_RECEIPT_TIMEOUT
   config/load.ts               # layered config: override > env > cwd > home > default
   output/format.ts             # cliError, emit, fail, setOutputMode
   state/
@@ -83,6 +93,10 @@ When writing a new command, ALWAYS:
 
 7. **No type-cast assertions on viem returns:** `parseAbi` already infers `bigint`/`boolean`/`string`. `(v as bigint).toString()` is dead weight.
 
+8. **Receipt waiting:** `waitForWriteReceipt({ publicClient, hash })` from `src/chain/receipt.ts`. Never call viem's `waitForTransactionReceipt` directly — the helper maps `WaitForTransactionReceiptTimeoutError` to `TX_RECEIPT_TIMEOUT` (with the "retry with same `--idempotency-key`" hint). The cache intentionally stays `submitted` on timeout so the next retry can reconcile.
+
+9. **Submitted-cache retries:** When `peekIdempotent` returns `{ kind: 'return-submitted' }`, call `handleSubmittedCacheDecision()` from `src/commands/write-cache.ts`. It polls `getTransactionReceipt`, promotes `submitted` → `confirmed` if the tx landed, and returns the cached state otherwise. Never reproduce this logic inline.
+
 ## The bug surface to be paranoid about
 
 Three classes have produced production bugs:
@@ -112,9 +126,11 @@ Match on `code`, never on `message`. Codes are stable; messages can drift.
 
 ## Reference
 
-- **Issue #5** — the 13-commands epic. 8/13 shipped; the 5 blocked (`unlock` — no withdraw ABI; `create-datanet` + `register-agent` — need platform API spec; `query emissions-due` — needs pod enumeration; `swap` — Uniswap V3 multi-tx scope) are documented in [issue #5 comments](https://github.com/Reppo-Labs/reppo-cli/issues/5).
+- **Issue #5** — the 13-commands epic. 11/13 shipped (vote, lock, extend-lock, grant-access, mint-pod, claim-emissions, unlock, register-agent, query emissions-due, list datanets, list pods); still blocked: `create-datanet` (platform API spec) and `swap` (Uniswap V3 multi-tx). See [issue #5 comments](https://github.com/Reppo-Labs/reppo-cli/issues/5).
 - **README.md** — user-facing CLI docs; status line lists what's actually shipped.
 - **`src/chain/abis.ts:5-10`** — comment explaining the mainnet vs testnet param variant.
+- **`src/chain/receipt.ts`** — `waitForWriteReceipt` + `TX_RECEIPT_TIMEOUT` mapping.
+- **`src/commands/write-cache.ts`** — `handleSubmittedCacheDecision`; canonical retry-reconcile path for write commands.
 - **`src/state/idempotency.ts`** — top-of-file comment is the protocol spec.
 - **`src/commands/vote.ts`** — canonical write command; reference for new write implementations.
 - **`src/commands/query/balance.ts`** — canonical read command; reference for new read implementations.
