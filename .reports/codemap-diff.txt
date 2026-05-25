@@ -1,0 +1,49 @@
+Codemap analysis report
+Generated: 2026-05-25
+Branch:    fix/idempotency-reconcile-receipt-timeout
+HEAD:      6e3c595 fix idempotency retries after receipt timeout and crashed runs
+
+Status: INITIAL SCAN (no prior baseline)
+
+Files scanned:       31 source files in src/ (excluding *.test.ts)
+Total source lines:  ~6,200
+Commands registered: 16 (8 write, 5 read, 2 list, 1 auth)
+
+Codemaps generated:
+  docs/CODEMAPS/architecture.md     ~700 tokens
+  docs/CODEMAPS/backend.md          ~950 tokens
+  docs/CODEMAPS/data.md             ~700 tokens
+  docs/CODEMAPS/dependencies.md     ~650 tokens
+
+Skipped:
+  frontend.md — CLI has no UI surface.
+
+Architecture summary:
+  Layer 0: src/bin.ts (clipanion entry, registers all commands)
+  Layer 1: src/commands/  (16 subcommand classes + _base.ts + write-cache.ts)
+  Layer 2: src/chain/     (viem clients, ABIs, addresses, helpers, receipt)
+           src/api/       (HTTP - Reppo platform + Privy SIWE)
+           src/state/     (~/.reppo/cli-state.json + idempotency protocol)
+  Layer 3: src/output/format.ts (cliError/emit/fail), src/config/load.ts
+
+Dependencies detected:
+  npm prod:   clipanion, typanion, viem, proper-lockfile
+  external:   Base RPC, reppo.ai/api/v1 (agents+catalog), api.reppo.xyz (Privy SIWE)
+  contracts:  PodManager (V2), SubnetManager, veREPPO, REPPO/USDC ERC20, Uniswap (reserved)
+
+Recent architecture changes (from git log):
+  - PR #41 (this branch): receipt.ts + write-cache.ts (idempotency reconciliation)
+  - PR #40: `list pods --all` for community-pod discovery
+  - PR #39: PodManager V2 migration; unified ABI on both networks
+  - PR #38: register-agent matches /agents/register spec
+  - PR #36: mainnet PodManager V2 + SubnetManager wiring
+
+Staleness: N/A (first generation). Regenerate after merging PR #41 to confirm
+codemap references to receipt.ts/write-cache.ts remain accurate on main.
+
+Notes:
+  - data.md describes the idempotency state machine including the post-#41
+    stale-pending TTL and submitted->confirmed auto-reconciliation; cross-checks
+    against src/state/idempotency.ts and src/commands/write-cache.ts.
+  - backend.md error-code table covers the additions in this branch
+    (TX_RECEIPT_TIMEOUT, IDEMPOTENCY_TERMINAL_STATE).
