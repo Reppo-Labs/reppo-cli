@@ -2,7 +2,7 @@
 
 Command-line interface for [Reppo](https://reppo.ai) — mint pods, vote, lock REPPO, manage datanets. Built for **AI agents** as the primary user, but humans can use it too.
 
-> **Status:** v0.4.0 — fully wired against PodManager V2 on mainnet. Shipped: `auth`, `query balance`, `query datanet`, `query emissions-due`, `query pod`, `query voting-power`, `list datanets`, `list pods` (incl. `--all`), `claim-emissions`, `extend-lock`, `grant-access`, `lock`, `mint-pod`, `register-agent`, `unlock`, `vote`. Remaining 2 commands (`create-datanet`, `swap`) are scaffolded but not yet wired.
+> **Status:** v0.4.0 — fully wired against PodManager V2 on mainnet. Shipped: `approve`, `auth`, `query balance`, `query datanet`, `query emissions-due`, `query pod`, `query voting-power`, `list datanets`, `list pods` (incl. `--all`), `claim-emissions`, `extend-lock`, `grant-access`, `lock`, `mint-pod`, `register-agent`, `unlock`, `vote`. Remaining 2 commands (`create-datanet`, `swap`) are scaffolded but not yet wired.
 
 ## Install
 
@@ -55,6 +55,7 @@ Errors **always** emit JSON on stderr regardless of mode, with a stable `code` f
 
 ### Write
 
+- `reppo approve --spender <pod-manager|subnet-manager|ve-reppo|0x…> [--amount <units|max>] [--token reppo|usdc]` — set an ERC20 allowance so subsequent writes (lock, grant-access, mint-pod) don't fail with INSUFFICIENT_ALLOWANCE. Defaults to unlimited (`max`); reads the current allowance first and emits `{status:'no-op'}` if it already covers the request.
 - `reppo vote --pod <id> --votes <n> --like|--dislike` — cast a vote on a pod, spending `<n>` voting power
 - `reppo mint-pod --datanet <id> [--token reppo|primary] [--to <addr>]` — mint a pod into a datanet
 - `reppo lock <amount> --duration <seconds>` — lock REPPO into veREPPO for voting power
