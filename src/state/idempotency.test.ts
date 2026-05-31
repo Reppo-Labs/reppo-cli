@@ -135,4 +135,18 @@ describe('peekIdempotent', () => {
       peekIdempotent('argkey', COMMAND, { podId: '2', subnetId: '1', like: true }, false),
     ).rejects.toMatchObject({ code: 'IDEMPOTENCY_ARGS_MISMATCH' });
   });
+
+  it("returns 'proceed' for stale pending (crashed mid-flight)", async () => {
+    const { readFileSync, writeFileSync } = await import('node:fs');
+    const { PENDING_STALE_MS } = await import('./idempotency.js');
+    await begin('stale-p', COMMAND, args);
+    const path = process.env.REPPO_STATE_PATH!;
+    const state = JSON.parse(readFileSync(path, 'utf8')) as {
+      idempotency: Record<string, { updatedAt: number }>;
+    };
+    state.idempotency['stale-p']!.updatedAt = Date.now() - PENDING_STALE_MS - 1000;
+    writeFileSync(path, JSON.stringify(state));
+    const d = await peekIdempotent('stale-p', COMMAND, args, false);
+    expect(d.kind).toBe('proceed');
+  });
 });

@@ -15,14 +15,30 @@
  * rejected with `IDEMPOTENCY_ARGS_MISMATCH` instead of silently
  * returning the wrong cached result.
  *
- * Callers should pattern-match `getIdempotent(key, command, args)`
+ * Callers should pattern-match `peekIdempotent(key, command, args, isDryRun)`
  * BEFORE doing work:
  *   - null         → fresh, proceed
  *   - 'confirmed'  → return cached result
- *   - 'submitted'  → return cached txHash; the agent can poll the tx
- *   - 'pending'    → another invocation is mid-flight; refuse with code
- *   - 'failed'     → previous attempt failed; refuse OR allow retry under
- *                    a fresh key (caller policy)
+ *   - 'submitted'  → a tx was broadcast but never confirmed locally (a
+ *                    receipt timeout or a crash between submit and confirm).
+ *                    On retry the caller reconciles via
+ *                    `handleSubmittedCacheDecision`: poll the receipt and, if
+ *                    the tx landed, promote 'submitted' → 'confirmed' and
+ *                    return the result; otherwise return the cached txHash so
+ *                    the agent can keep polling. The entry intentionally
+ *                    stays 'submitted' on timeout so the next retry can finish
+ *                    the reconcile — it is NOT re-broadcast.
+ *   - 'pending'    → another invocation is mid-flight; refuse with
+ *                    IDEMPOTENCY_IN_FLIGHT — UNLESS the entry is older than
+ *                    PENDING_STALE_MS (10 min). A stale 'pending' means the
+ *                    prior run crashed BEFORE submitting (begin ran, markSubmitted
+ *                    did not), so nothing was broadcast under this key and it is
+ *                    safe to proceed.
+ *   - 'failed'     → if a txHash was recorded, refuse with
+ *                    IDEMPOTENCY_FAILED_AFTER_BROADCAST (re-broadcasting under
+ *                    the same key would pay gas for a second doomed attempt;
+ *                    use a fresh key). A pre-submit failure (no txHash) is safe
+ *                    to retry under the same key → proceed.
  */
 import { createHash } from 'node:crypto';
 import {
@@ -34,6 +50,8 @@ import {
 import { cliError } from '../output/format.js';
 
 export type { IdempotencyEntry, IdempotencyStatus };
+
+export const PENDING_STALE_MS = 10 * 60 * 1000;
 
 /**
  * Decision returned by `peekIdempotent` so write commands can decide what
@@ -145,12 +163,16 @@ export async function peekIdempotent<R>(
       return { kind: 'return-confirmed', result: cached.result as R, txHash: cached.txHash };
     case 'submitted':
       return { kind: 'return-submitted', result: cached.result as R, txHash: cached.txHash };
-    case 'pending':
+    case 'pending': {
+      if (Date.now() - cached.updatedAt > PENDING_STALE_MS) {
+        return { kind: 'proceed' };
+      }
       throw cliError(
         'IDEMPOTENCY_IN_FLIGHT',
         `Idempotency key "${key}" is in 'pending' state — another invocation is mid-flight.`,
         'Wait for the in-flight invocation to finish, or use a fresh key.',
       );
+    }
     case 'failed':
       if (cached.txHash) {
         throw cliError(
@@ -188,13 +210,14 @@ export async function markSubmitted(
   command: string,
   args: Record<string, unknown>,
   txHash: string,
+  result: Record<string, unknown> = {},
 ): Promise<void> {
   const now = Date.now();
   await upsertIdempotent(key, {
     command,
     argsFingerprint: fingerprintArgs(args),
     status: 'submitted',
-    result: { txHash },
+    result: { ...result, txHash },
     txHash,
     createdAt: now,
     updatedAt: now,

@@ -26,6 +26,8 @@ import { cliError, emit } from '../output/format.js';
 import { createClients, nextNonce } from '../chain/clients.js';
 import { veReppo } from '../chain/contracts.js';
 import { decodeRevert } from '../chain/errors.js';
+import { handleSubmittedCacheDecision } from './write-cache.js';
+import { waitForWriteReceipt } from '../chain/receipt.js';
 import { begin, markSubmitted, markConfirmed, markFailed, peekIdempotent } from '../state/idempotency.js';
 
 const COMMAND = 'unlock';
@@ -94,10 +96,34 @@ export class UnlockCommand extends BaseCommand {
         return 0;
       }
       if (decision.kind === 'return-submitted') {
-        emit({ ...decision.result, idempotent: true, status: 'submitted' },
-          [`(cached, submitted but not confirmed yet) tx: ${decision.txHash ?? 'n/a'}`,
-           `Re-run after the tx confirms, or check the explorer.`]);
-        return 0;
+        const clients = createClients({
+          network: cfg.network,
+          privateKey: pk,
+          ...(cfg.rpcUrl ? { rpcUrl: cfg.rpcUrl } : {}),
+        });
+        return handleSubmittedCacheDecision(decision, {
+          idempotencyKey: this.idempotencyKey,
+          command: COMMAND,
+          args,
+          network: cfg.network,
+          publicClient: clients.publicClient,
+          buildResult: async () => {
+            try {
+              const vrLocal = veReppo(cfg.network);
+              const lockup = await clients.publicClient.readContract({
+                address: vrLocal.address, abi: vrLocal.abi, functionName: 'lockupData', args: [lockupId],
+              });
+              const [amount] = lockup;
+              return {
+                lockupId: args.lockupId,
+                to: args.to,
+                amount: { raw: amount.toString(), formatted: formatUnits(amount, 18) },
+              };
+            } catch {
+              return { lockupId: args.lockupId, to: args.to };
+            }
+          },
+        });
       }
 
       // Throwing variant — write commands must fail loud on TBD.
@@ -178,9 +204,15 @@ export class UnlockCommand extends BaseCommand {
       }
 
       // markSubmitted BEFORE waitForReceipt — closes the retry-resend window.
-      if (this.idempotencyKey) await markSubmitted(this.idempotencyKey, COMMAND, args, tx);
+      if (this.idempotencyKey) {
+        await markSubmitted(this.idempotencyKey, COMMAND, args, tx, {
+          lockupId: lockupId.toString(),
+          to: target,
+          amount: { raw: amount.toString(), formatted: formatUnits(amount, 18) },
+        });
+      }
 
-      const receipt = await clients.publicClient.waitForTransactionReceipt({ hash: tx, timeout: 120_000 });
+      const receipt = await waitForWriteReceipt(clients.publicClient, tx);
       if (receipt.status === 'reverted') {
         if (this.idempotencyKey) await markFailed(this.idempotencyKey, COMMAND, args, 'TX_REVERTED', tx);
         throw cliError('TX_REVERTED', `unlock tx reverted: ${tx}`);

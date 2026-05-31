@@ -27,6 +27,8 @@ import { cliError, emit } from '../output/format.js';
 import { createClients, nextNonce } from '../chain/clients.js';
 import { podManager, veReppo } from '../chain/contracts.js';
 import { decodeRevert } from '../chain/errors.js';
+import { handleSubmittedCacheDecision } from './write-cache.js';
+import { waitForWriteReceipt } from '../chain/receipt.js';
 import { begin, markSubmitted, markConfirmed, markFailed, peekIdempotent } from '../state/idempotency.js';
 
 const COMMAND = 'vote';
@@ -113,10 +115,29 @@ export class VoteCommand extends BaseCommand {
         return 0;
       }
       if (decision.kind === 'return-submitted') {
-        emit({ ...decision.result, idempotent: true, status: 'submitted' },
-          [`(cached, submitted but not confirmed yet) tx: ${decision.txHash ?? 'n/a'}`,
-           `Re-run after the tx confirms, or check the explorer.`]);
-        return 0;
+        const clients = createClients({
+          network: cfg.network,
+          privateKey: pk,
+          ...(cfg.rpcUrl ? { rpcUrl: cfg.rpcUrl } : {}),
+        });
+        return handleSubmittedCacheDecision(decision, {
+          idempotencyKey: this.idempotencyKey,
+          command: COMMAND,
+          args,
+          network: cfg.network,
+          publicClient: clients.publicClient,
+          buildResult: async () => {
+            try {
+              const vrLocal = veReppo(cfg.network);
+              const voterPower = await clients.publicClient.readContract({
+                address: vrLocal.address, abi: vrLocal.abi, functionName: 'votingPowerOf', args: [clients.account.address],
+              });
+              return { podId: args.podId, votes: args.votes, like: args.like, voterPower: voterPower.toString() };
+            } catch {
+              return { podId: args.podId, votes: args.votes, like: args.like };
+            }
+          },
+        });
       }
 
       const clients = createClients({
@@ -191,9 +212,16 @@ export class VoteCommand extends BaseCommand {
 
       // Persist 'submitted' BEFORE waiting for the receipt — that's the
       // window where an agent retry could otherwise re-send.
-      if (this.idempotencyKey) await markSubmitted(this.idempotencyKey, COMMAND, args, tx);
+      if (this.idempotencyKey) {
+        await markSubmitted(this.idempotencyKey, COMMAND, args, tx, {
+          podId: podId.toString(),
+          votes: votes.toString(),
+          like: likeBool,
+          voterPower: power.toString(),
+        });
+      }
 
-      const receipt = await clients.publicClient.waitForTransactionReceipt({ hash: tx, timeout: 120_000 });
+      const receipt = await waitForWriteReceipt(clients.publicClient, tx);
       if (receipt.status === 'reverted') {
         // Pass tx hash so the cached failed entry retains it for forensics
         // AND so the same-key-retry guard (above) refuses re-broadcast.

@@ -23,6 +23,8 @@ import { cliError, emit } from '../output/format.js';
 import { createClients, nextNonce } from '../chain/clients.js';
 import { podManager } from '../chain/contracts.js';
 import { decodeRevert } from '../chain/errors.js';
+import { handleSubmittedCacheDecision } from './write-cache.js';
+import { waitForWriteReceipt } from '../chain/receipt.js';
 import { begin, markSubmitted, markConfirmed, markFailed, peekIdempotent } from '../state/idempotency.js';
 
 const COMMAND = 'claim-emissions';
@@ -84,10 +86,23 @@ export class ClaimEmissionsCommand extends BaseCommand {
         return 0;
       }
       if (decision.kind === 'return-submitted') {
-        emit({ ...decision.result, idempotent: true, status: 'submitted' },
-          [`(cached, submitted but not confirmed yet) tx: ${decision.txHash ?? 'n/a'}`,
-           `Re-run after the tx confirms, or check the explorer.`]);
-        return 0;
+        const clients = createClients({
+          network: cfg.network,
+          privateKey: pk,
+          ...(cfg.rpcUrl ? { rpcUrl: cfg.rpcUrl } : {}),
+        });
+        return handleSubmittedCacheDecision(decision, {
+          idempotencyKey: this.idempotencyKey,
+          command: COMMAND,
+          args,
+          network: cfg.network,
+          publicClient: clients.publicClient,
+          buildResult: () => ({
+            podId: podId.toString(),
+            epoch: epoch.toString(),
+            amountClaimed: { unavailable: 'PodManager V2 does not expose a per-pod emissions-due view' },
+          }),
+        });
       }
 
       const clients = createClients({
@@ -166,9 +181,15 @@ export class ClaimEmissionsCommand extends BaseCommand {
       }
 
       // markSubmitted BEFORE waitForReceipt — closes the retry-resend window.
-      if (this.idempotencyKey) await markSubmitted(this.idempotencyKey, COMMAND, args, tx);
+      if (this.idempotencyKey) {
+        await markSubmitted(this.idempotencyKey, COMMAND, args, tx, {
+          podId: podId.toString(),
+          epoch: epoch.toString(),
+          amountClaimed: { unavailable: 'PodManager V2 does not expose a per-pod emissions-due view' },
+        });
+      }
 
-      const receipt = await clients.publicClient.waitForTransactionReceipt({ hash: tx, timeout: 120_000 });
+      const receipt = await waitForWriteReceipt(clients.publicClient, tx);
       if (receipt.status === 'reverted') {
         if (this.idempotencyKey) await markFailed(this.idempotencyKey, COMMAND, args, 'TX_REVERTED', tx);
         throw cliError('TX_REVERTED', `claim-emissions tx reverted: ${tx}`);
