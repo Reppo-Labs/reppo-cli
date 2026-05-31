@@ -33,7 +33,7 @@ describe('reconcileSubmittedCache', () => {
     } as TransactionReceipt;
 
     const client = {
-      getTransactionReceipt: async () => receipt,
+      getTransactionReceipt: () => Promise.resolve(receipt),
     } as unknown as PublicClient;
 
     const result = await reconcileSubmittedCache(
@@ -57,7 +57,7 @@ describe('reconcileSubmittedCache', () => {
     } as TransactionReceipt;
 
     const client = {
-      getTransactionReceipt: async () => receipt,
+      getTransactionReceipt: () => Promise.resolve(receipt),
     } as unknown as PublicClient;
 
     const result = await reconcileSubmittedCache(

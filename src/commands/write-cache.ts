@@ -87,7 +87,7 @@ export async function handleSubmittedCacheDecision(
     if (reconciled) {
       emit(
         { ...reconciled, idempotent: true, status: 'confirmed' },
-        [`(cached, reconciled to confirmed) tx: ${reconciled.basescanUrl ?? txHash}`],
+        [`(cached, reconciled to confirmed) tx: ${basescanTxUrl(opts.network, txHash)}`],
       );
       return 0;
     }

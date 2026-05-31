@@ -144,7 +144,7 @@ describe('peekIdempotent', () => {
     const state = JSON.parse(readFileSync(path, 'utf8')) as {
       idempotency: Record<string, { updatedAt: number }>;
     };
-    state.idempotency['stale-p'].updatedAt = Date.now() - PENDING_STALE_MS - 1000;
+    state.idempotency['stale-p']!.updatedAt = Date.now() - PENDING_STALE_MS - 1000;
     writeFileSync(path, JSON.stringify(state));
     const d = await peekIdempotent('stale-p', COMMAND, args, false);
     expect(d.kind).toBe('proceed');
