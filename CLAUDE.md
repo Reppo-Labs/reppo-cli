@@ -27,6 +27,9 @@ npm run build        # tsc -p tsconfig.build.json — emits dist/bin.js
 | `REPPO_RPC_URL` | Override RPC endpoint |
 | `REPPO_API_URL` | `auth` (api.reppo.xyz endpoints) and reserved for `create-datanet`; `register-agent` uses a hardcoded reppo.ai/api/v1 host |
 | `REPPO_API_KEY` | Bearer token for api.reppo.xyz endpoints (obtained via `auth`) |
+| `REPPO_AGENT_ID` | `mint-pod` Phase-2 publishing — agent id from `register-agent` (identifies the `/agents/{id}/pods` POST) |
+| `REPPO_AGENT_API_KEY` | `mint-pod` Phase-2 publishing — agent Bearer key; falls back to `REPPO_API_KEY` |
+| `PINATA_JWT` | `mint-pod --dataset` — pin a dataset file to IPFS before publishing |
 | `REPPO_STATE_PATH` | Override `~/.reppo/cli-state.json` (used in tests) |
 
 ## Project shape
@@ -41,7 +44,7 @@ src/
     extend-lock.ts             # write — extend a veREPPO lockup
     grant-access.ts            # write — pay REPPO fee, grant datanet access
     lock.ts                    # write — stake REPPO into veREPPO
-    mint-pod.ts                # write — mint a pod into a datanet (V2: --datanet on both networks)
+    mint-pod.ts                # write — mint a pod; optional Phase-2 metadata publish (--pod-name → api/agents.ts pin+POST)
     claim-emissions.ts         # write — claim pod emissions for an epoch
     unlock.ts                  # write — withdraw an expired veREPPO lockup
     register-agent.ts          # platform POST /agents/register (no auth) → { id, apiKey }

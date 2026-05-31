@@ -24,6 +24,9 @@ The CLI is non-interactive — all credentials come from environment variables:
 | `REPPO_RPC_URL` | All commands (optional) | Override RPC endpoint |
 | `REPPO_API_URL` | Platform-API commands (optional) | Override Reppo API base |
 | `REPPO_API_KEY` | `register-agent`, `create-datanet` | Reppo platform API key |
+| `REPPO_AGENT_ID` | `mint-pod` Phase-2 publishing | Agent id from `register-agent`; identifies the `/agents/{id}/pods` POST |
+| `REPPO_AGENT_API_KEY` | `mint-pod` Phase-2 publishing (optional) | Agent Bearer key from `register-agent`; falls back to `REPPO_API_KEY` |
+| `PINATA_JWT` | `mint-pod --dataset` (optional) | Pinata JWT for pinning a dataset to IPFS before publishing |
 
 Network can also be set per-call via `--network mainnet|testnet`.
 
@@ -57,7 +60,7 @@ Errors **always** emit JSON on stderr regardless of mode, with a stable `code` f
 
 - `reppo approve --spender <pod-manager|subnet-manager|ve-reppo|0x…> [--amount <units|max>] [--token reppo|usdc]` — set an ERC20 allowance so subsequent writes (lock, grant-access, mint-pod) don't fail with INSUFFICIENT_ALLOWANCE. Defaults to unlimited (`max`); reads the current allowance first and emits `{status:'no-op'}` if it already covers the request.
 - `reppo vote --pod <id> --votes <n> --like|--dislike` — cast a vote on a pod, spending `<n>` voting power
-- `reppo mint-pod --datanet <id> [--token reppo|primary] [--to <addr>]` — mint a pod into a datanet
+- `reppo mint-pod --datanet <id> [--token reppo|primary] [--to <addr>]` — mint a pod into a datanet. Add `--pod-name <s>` to also publish metadata (Phase 2): after the on-chain mint, register the pod with the platform (`POST /agents/{id}/pods`). Requires `--subnet-uuid <cuid>` (the platform UUID, **not** the numeric `--datanet` id), `--agree-to-terms`, and `REPPO_AGENT_ID` + agent key. Optionally `--pod-description`, `--category`, `--platform`, `--url`, and a dataset: `--dataset <file>` (pinned to IPFS via `PINATA_JWT`) or `--dataset-uri <url>` (used as-is). A Phase-2 failure does not fail the mint — it exits 0 with `metadata.published:false`; re-run with the same `--idempotency-key` to retry.
 - `reppo lock <amount> --duration <seconds>` — lock REPPO into veREPPO for voting power
 - `reppo unlock <lockupId> [--to <addr>]` — withdraw an expired veREPPO lockup, returning the locked REPPO
 - `reppo extend-lock <lockupId> --duration <seconds>` — extend an existing veREPPO lockup

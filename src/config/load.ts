@@ -28,6 +28,17 @@ export interface Config {
   apiKey: string | undefined;
   privateKey: `0x${string}` | undefined;
   voterPrivateKey: `0x${string}` | undefined;
+  /**
+   * Agent identity for the reppo.ai/api/v1/agents/{id}/pods metadata POST
+   * (Phase 2 of mint-pod). `agentId` + `agentApiKey` come from
+   * `reppo register-agent`. `agentApiKey` falls back to REPPO_API_KEY so an
+   * operator with a single key set keeps working; prefer REPPO_AGENT_API_KEY
+   * when the agent key and the api.reppo.xyz wallet-auth key differ.
+   */
+  agentId: string | undefined;
+  agentApiKey: string | undefined;
+  /** Pinata JWT for pinning datasets to IPFS (mint-pod `--dataset`). */
+  pinataJwt: string | undefined;
 }
 
 const DEFAULT_API_MAINNET = 'https://api.reppo.xyz';
@@ -98,5 +109,8 @@ export function loadConfig(overrides: { network?: Network } = {}): Config {
     apiKey: process.env.REPPO_API_KEY,
     privateKey: normalizePk(process.env.REPPO_PRIVATE_KEY),
     voterPrivateKey: normalizePk(process.env.REPPO_VOTER_PRIVATE_KEY),
+    agentId: process.env.REPPO_AGENT_ID,
+    agentApiKey: process.env.REPPO_AGENT_API_KEY ?? process.env.REPPO_API_KEY,
+    pinataJwt: process.env.PINATA_JWT,
   };
 }
