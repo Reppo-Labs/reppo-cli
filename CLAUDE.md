@@ -54,7 +54,7 @@ src/
       pods.ts                  # list pods (--datanet filter; --all for community-pod discovery)
     query/
       balance.ts               # canonical read command (uses tryX helpers)
-      datanet.ts               # validity + REPPO fee + caller-access
+      datanet.ts               # on-chain validity + REPPO fee + caller-access; merges off-chain catalog metadata (api/subnets.ts, best-effort)
       pod.ts                   # ownerOf, exists/owner
       voting-power.ts          # votingPowerOf + lockupCount
       emissions-due.ts         # epoch emissions claimable for a pod

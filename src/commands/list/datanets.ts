@@ -20,35 +20,8 @@
 import { Option } from 'clipanion';
 import { BaseCommand } from '../_base.js';
 import { cliError, emit } from '../../output/format.js';
-import { publicGet, DEFAULT_PUBLIC_API_URL } from '../../api/public.js';
-
-/** Raw subnet row as returned by /api/v1/public/subnets. */
-interface RawSubnet {
-  id?: string;
-  subnetName?: string;
-  subnetDescription?: string;
-  thumbnailUrl?: string;
-  nativeTokenAddress?: string;
-  nativeTokenSymbol?: string;
-  nativeTokenDecimals?: number;
-  tokenId?: string;
-  accessFeeREPPO?: number | string;
-  emissionsPerEpochREPPO?: number | string;
-  emissionsPerEpochPrimaryToken?: number | string;
-  status?: string;
-  upVoteVolume?: number | string;
-  downVoteVolume?: number | string;
-  onboardingPublishers?: string;
-  onboardingVoters?: string;
-  createdByUserId?: string;
-  deleteScheduledAt?: string | null;
-  isABTestingSubnet?: boolean;
-}
-
-interface PublicSubnetsResponse {
-  data?: { subnets?: RawSubnet[] };
-  subnets?: RawSubnet[];
-}
+import { DEFAULT_PUBLIC_API_URL } from '../../api/public.js';
+import { fetchSubnets, numericToString, type RawSubnet } from '../../api/subnets.js';
 
 interface DatanetRow {
   id: string;
@@ -127,12 +100,11 @@ export class ListDatanetsCommand extends BaseCommand {
       // Resolve env override at call site (per spec — not in loadConfig).
       const baseUrl = process.env.REPPO_PUBLIC_API_URL ?? DEFAULT_PUBLIC_API_URL;
 
-      const resp = await publicGet<PublicSubnetsResponse>(baseUrl, '/api/v1/public/subnets');
-      const raw = resp.data?.subnets ?? resp.subnets ?? [];
+      const raw = await fetchSubnets(baseUrl);
 
       // Filter: status, token-symbol.
       const symbolNeedle = this.tokenSymbol?.toLowerCase();
-      const filtered = raw.filter((s) => {
+      const filtered = raw.filter((s: RawSubnet) => {
         if (statusUpper === 'ACTIVE' && (s.status ?? '').toUpperCase() !== 'ACTIVE') return false;
         if (symbolNeedle && (s.nativeTokenSymbol ?? '').toLowerCase() !== symbolNeedle) return false;
         return true;
@@ -171,22 +143,6 @@ export class ListDatanetsCommand extends BaseCommand {
 
 function isStatusFilter(v: string): v is StatusFilter {
   return (VALID_STATUSES as readonly string[]).includes(v);
-}
-
-/**
- * Convert a JSON number/string from the platform into a string suitable
- * for downstream BigInt parsing. Non-numeric or missing values render
- * as "0" rather than "NaN" or "undefined" so the output shape stays
- * consistent.
- */
-function numericToString(v: number | string | undefined): string {
-  if (v === undefined || v === null) return '0';
-  if (typeof v === 'number') {
-    if (!Number.isFinite(v)) return '0';
-    return Math.trunc(v).toString();
-  }
-  const s = v.trim();
-  return s === '' ? '0' : s;
 }
 
 function toRow(s: RawSubnet): DatanetRow {

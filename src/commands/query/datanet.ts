@@ -23,8 +23,29 @@ import { BaseCommand } from '../_base.js';
 import { cliError, emit } from '../../output/format.js';
 import { createReadClient } from '../../chain/clients.js';
 import { trySubnetManager } from '../../chain/contracts.js';
+import { DEFAULT_PUBLIC_API_URL } from '../../api/public.js';
+import { fetchSubnetByTokenId, numericToString, type RawSubnet } from '../../api/subnets.js';
 
 type Numeric = { raw: string; formatted: string } | { unavailable: string };
+
+/** Off-chain catalog metadata, or a reason it couldn't be resolved. */
+type Metadata =
+  | {
+      subnetUuid: string;
+      name: string;
+      description: string;
+      status: string;
+      nativeToken: { address: string; symbol: string; decimals: number };
+      emissionsPerEpochREPPO: string;
+      emissionsPerEpochPrimaryToken: string;
+      upVoteVolume: string;
+      downVoteVolume: string;
+      onboardingPublishers: string;
+      onboardingVoters: string;
+      thumbnailUrl: string;
+      isABTestingSubnet: boolean;
+    }
+  | { unavailable: string };
 
 function unavailable(reason: string): { unavailable: string } {
   return { unavailable: reason };
@@ -59,6 +80,11 @@ export class QueryDatanetCommand extends BaseCommand {
         throw cliError('INVALID_DATANET_ID', `Datanet id must be a non-negative integer; got "${this.datanet}".`);
       }
 
+      // Off-chain catalog metadata (name, description, token, emissions,
+      // onboarding). Best-effort: a catalog outage or a datanet absent from
+      // the public catalog must NOT break the authoritative on-chain answer.
+      const metadata = await this.fetchMetadata(datanetId.toString());
+
       const client = createReadClient({ network: cfg.network, ...(cfg.rpcUrl ? { rpcUrl: cfg.rpcUrl } : {}) });
       const sm = trySubnetManager(cfg.network);
 
@@ -70,11 +96,13 @@ export class QueryDatanetCommand extends BaseCommand {
             network: cfg.network,
             valid: unavailable(reason),
             accessFeeREPPO: unavailable(reason),
+            metadata,
           },
           [
             `Datanet:       ${datanetId}`,
             `Network:       ${cfg.network}`,
-            `(unavailable: ${reason})`,
+            `(on-chain unavailable: ${reason})`,
+            ...this.metadataLines(metadata),
           ],
         );
         return 0;
@@ -108,6 +136,7 @@ export class QueryDatanetCommand extends BaseCommand {
         valid,
         accessFeeREPPO,
         ...(callerAccess ? { callerAccess } : {}),
+        metadata,
       };
 
       const feeFmt = 'unavailable' in accessFeeREPPO
@@ -124,6 +153,7 @@ export class QueryDatanetCommand extends BaseCommand {
         lines.push(`Caller:        ${callerAccess.address}`);
         lines.push(`Caller access: ${callerAccess.hasAccess}`);
       }
+      lines.push(...this.metadataLines(metadata));
 
       emit(result, lines);
       return 0;
@@ -141,5 +171,71 @@ export class QueryDatanetCommand extends BaseCommand {
     }
     if (pk) return privateKeyToAddress(pk);
     return undefined;
+  }
+
+  /**
+   * Resolve the off-chain catalog row for this datanet by its on-chain id
+   * (`tokenId`). Best-effort: returns `{ unavailable }` on a catalog outage
+   * or a no-match, never throwing — the on-chain answer is authoritative and
+   * must survive a flaky platform API.
+   */
+  private async fetchMetadata(tokenId: string): Promise<Metadata> {
+    const baseUrl = process.env.REPPO_PUBLIC_API_URL ?? DEFAULT_PUBLIC_API_URL;
+    try {
+      const row = await fetchSubnetByTokenId(baseUrl, tokenId);
+      if (!row) return unavailable('datanet not found in the public catalog');
+      return this.toMetadata(row);
+    } catch (e) {
+      return unavailable(`catalog fetch failed: ${(e as Error).message}`);
+    }
+  }
+
+  private toMetadata(s: RawSubnet): Metadata {
+    return {
+      subnetUuid: s.id ?? '',
+      name: s.subnetName ?? '',
+      description: s.subnetDescription ?? '',
+      status: s.status ?? 'UNKNOWN',
+      nativeToken: {
+        address: s.nativeTokenAddress ?? '',
+        symbol: s.nativeTokenSymbol ?? '',
+        decimals: typeof s.nativeTokenDecimals === 'number' ? s.nativeTokenDecimals : 0,
+      },
+      emissionsPerEpochREPPO: numericToString(s.emissionsPerEpochREPPO),
+      emissionsPerEpochPrimaryToken: numericToString(s.emissionsPerEpochPrimaryToken),
+      upVoteVolume: numericToString(s.upVoteVolume),
+      downVoteVolume: numericToString(s.downVoteVolume),
+      onboardingPublishers: s.onboardingPublishers ?? '',
+      onboardingVoters: s.onboardingVoters ?? '',
+      thumbnailUrl: s.thumbnailUrl ?? '',
+      isABTestingSubnet: s.isABTestingSubnet ?? false,
+    };
+  }
+
+  /** Human-mode lines for the catalog metadata block. */
+  private metadataLines(m: Metadata): string[] {
+    if ('unavailable' in m) {
+      return [`Metadata:      (unavailable: ${m.unavailable})`];
+    }
+    const lines = [
+      ``,
+      `Name:          ${m.name}`,
+      `Status:        ${m.status}`,
+      `Token:         ${m.nativeToken.symbol} (${m.nativeToken.decimals} decimals) ${m.nativeToken.address}`,
+      `Emissions:     ${m.emissionsPerEpochREPPO} REPPO/epoch` +
+        (m.emissionsPerEpochPrimaryToken !== '0' ? ` + ${m.emissionsPerEpochPrimaryToken} primary/epoch` : ''),
+      `Votes:         ↑${m.upVoteVolume} / ↓${m.downVoteVolume}`,
+      `Subnet UUID:   ${m.subnetUuid}  (use as --subnet-uuid for mint-pod publishing)`,
+    ];
+    if (m.description.trim()) {
+      lines.push(``, `Description:`, m.description.trim());
+    }
+    if (m.onboardingPublishers.trim()) {
+      lines.push(``, `Onboarding — publishers:`, m.onboardingPublishers.trim());
+    }
+    if (m.onboardingVoters.trim()) {
+      lines.push(``, `Onboarding — voters:`, m.onboardingVoters.trim());
+    }
+    return lines;
   }
 }
