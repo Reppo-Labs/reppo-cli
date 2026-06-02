@@ -47,7 +47,7 @@ Errors **always** emit JSON on stderr regardless of mode, with a stable `code` f
 - `reppo query balance [address]` — ETH + REPPO + veREPPO + USDC
 - `reppo query voting-power [address]` — veREPPO voting power + lockup count
 - `reppo query pod <podId>` — pod existence + owner address
-- `reppo query datanet <datanetId> [--for <addr>]` — validity + REPPO access fee, optionally check access for an address
+- `reppo query datanet <datanetId> [--for <addr>]` — on-chain validity + REPPO access fee (optionally check access for an address), plus off-chain catalog metadata: name, description, native token (symbol/address/decimals), per-epoch emissions, vote volumes, publisher/voter onboarding guidance, and the platform `subnetUuid` (the `--subnet-uuid` for `mint-pod` publishing). Catalog enrichment is best-effort — a platform outage degrades `metadata` to `{ unavailable }` without affecting the on-chain answer.
 - `reppo query emissions-due` — list unclaimed REPPO emissions across all pods owned by the configured wallet (uses platform API)
 
 ### List
