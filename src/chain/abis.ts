@@ -40,6 +40,14 @@ export const SUBNET_MANAGER_ABI = parseAbi([
 ]);
 
 export const VE_REPPO_ABI = parseAbi([
+  // veReppo is the protocol's epoch time-base: PodManagerV2 and SubnetManager
+  // both read `veReppo.currentEpoch()`. Epochs are fixed-length windows
+  // (`epochLength()` = 172800s ≈ 48h); `epochEnd(epoch)` returns the unix
+  // second that epoch ends (== next epoch's start), so the current epoch's
+  // start is `epochEnd(currentEpoch) - epochLength`.
+  'function currentEpoch() view returns (uint256)',
+  'function epochLength() view returns (uint256)',
+  'function epochEnd(uint256 epoch) view returns (uint256)',
   'function votingPowerOf(address) view returns (uint256)',
   'function stake(uint256 amount, uint256 duration) returns (uint256 lockupId)',
   'function stakeMore(uint256 lockupId, uint256 amount)',

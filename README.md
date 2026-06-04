@@ -2,7 +2,7 @@
 
 Command-line interface for [Reppo](https://reppo.ai) — mint pods, vote, lock REPPO, manage datanets. Built for **AI agents** as the primary user, but humans can use it too.
 
-> **Status:** v0.4.0 — fully wired against PodManager V2 on mainnet. Shipped: `approve`, `auth`, `query balance`, `query datanet`, `query emissions-due`, `query pod`, `query voting-power`, `list datanets`, `list pods` (incl. `--all`), `claim-emissions`, `extend-lock`, `grant-access`, `lock`, `mint-pod`, `register-agent`, `unlock`, `vote`. Remaining 2 commands (`create-datanet`, `swap`) are scaffolded but not yet wired.
+> **Status:** v0.4.0 — fully wired against PodManager V2 on mainnet. Shipped: `approve`, `auth`, `query balance`, `query datanet`, `query epoch`, `query emissions-due`, `query pod`, `query voting-power`, `list datanets`, `list pods` (incl. `--all`), `claim-emissions`, `extend-lock`, `grant-access`, `lock`, `mint-pod`, `register-agent`, `unlock`, `vote`. Remaining 2 commands (`create-datanet`, `swap`) are scaffolded but not yet wired.
 
 ## Install
 
@@ -47,7 +47,8 @@ Errors **always** emit JSON on stderr regardless of mode, with a stable `code` f
 - `reppo query balance [address]` — ETH + REPPO + veREPPO + USDC
 - `reppo query voting-power [address]` — veREPPO voting power + lockup count
 - `reppo query pod <podId>` — pod existence + owner address
-- `reppo query datanet <datanetId> [--for <addr>]` — on-chain validity + REPPO access fee (optionally check access for an address), plus off-chain catalog metadata: name, description, native token (symbol/address/decimals), per-epoch emissions, vote volumes, publisher/voter onboarding guidance, and the platform `subnetUuid` (the `--subnet-uuid` for `mint-pod` publishing). Catalog enrichment is best-effort — a platform outage degrades `metadata` to `{ unavailable }` without affecting the on-chain answer.
+- `reppo query datanet <datanetId> [--for <addr>]` — on-chain validity + REPPO access fee (optionally check access for an address) + the current on-chain epoch, plus off-chain catalog metadata: name, description, native token (symbol/address/decimals), per-epoch emissions, vote volumes, publisher/voter onboarding guidance, and the platform `subnetUuid` (the `--subnet-uuid` for `mint-pod` publishing). Catalog enrichment is best-effort — a platform outage degrades `metadata` to `{ unavailable }` without affecting the on-chain answer.
+- `reppo query epoch` — current on-chain epoch, read directly from `veReppo.currentEpoch()` (the protocol's epoch time-base). JSON: `{ network, epoch, epochStart, epochDurationSeconds, secondsRemaining }`. Epochs are fixed ~48h windows; the timing fields are derived from `epochEnd`/`epochLength` and degrade to `null` if those getters are unavailable. Pure read — no signer, no gas. Honor `--rpc-url` against a private RPC (the public Base RPC rate-limits).
 - `reppo query emissions-due` — list unclaimed REPPO emissions across all pods owned by the configured wallet (uses platform API)
 
 ### List
