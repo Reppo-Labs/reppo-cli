@@ -22,7 +22,7 @@ import { privateKeyToAddress } from 'viem/accounts';
 import { BaseCommand } from '../_base.js';
 import { cliError, emit } from '../../output/format.js';
 import { createReadClient } from '../../chain/clients.js';
-import { trySubnetManager } from '../../chain/contracts.js';
+import { trySubnetManager, tryVeReppo } from '../../chain/contracts.js';
 import { DEFAULT_PUBLIC_API_URL } from '../../api/public.js';
 import { fetchSubnetByTokenId, numericToString, type RawSubnet } from '../../api/subnets.js';
 
@@ -111,6 +111,20 @@ export class QueryDatanetCommand extends BaseCommand {
       // On-chain function names use the legacy "subnet" naming; CLI surface uses datanet.
       const valid: boolean = await client.readContract({ ...sm, functionName: 'validSubnet', args: [datanetId] });
 
+      // Best-effort current epoch (veReppo is the protocol's epoch time-base).
+      // Surfaced so callers don't need a second `query epoch` round-trip; a
+      // null here never affects the authoritative validity/fee answer.
+      const ve = tryVeReppo(cfg.network);
+      let currentEpoch: number | null = null;
+      if (ve) {
+        try {
+          const e = await client.readContract({ ...ve, functionName: 'currentEpoch' });
+          currentEpoch = typeof e === 'bigint' ? Number(e) : null;
+        } catch {
+          // leave null — on-chain validity/fee are the authoritative fields
+        }
+      }
+
       // Skip the fee read on invalid datanets — getAccessFeeREPPO is likely
       // to revert (or return 0) for non-existent datanets, and either way
       // the answer is "no fee because there is no datanet", not "fee is 0".
@@ -134,6 +148,7 @@ export class QueryDatanetCommand extends BaseCommand {
         datanetId: datanetId.toString(),
         network: cfg.network,
         valid,
+        currentEpoch,
         accessFeeREPPO,
         ...(callerAccess ? { callerAccess } : {}),
         metadata,
@@ -147,6 +162,7 @@ export class QueryDatanetCommand extends BaseCommand {
         `Datanet:       ${datanetId}`,
         `Network:       ${cfg.network}`,
         `Valid:         ${valid}`,
+        `Current epoch: ${currentEpoch ?? '(unavailable)'}`,
         `Access fee:    ${feeFmt}`,
       ];
       if (callerAccess) {

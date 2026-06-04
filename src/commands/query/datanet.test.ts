@@ -18,6 +18,7 @@ vi.mock('../../chain/clients.js', () => ({
       if (functionName === 'validSubnet') return Promise.resolve(true);
       if (functionName === 'getAccessFeeREPPO') return Promise.resolve(50n * 10n ** 18n);
       if (functionName === 'hasSubnetAccess') return Promise.resolve(false);
+      if (functionName === 'currentEpoch') return Promise.resolve(97n);
       return Promise.resolve(undefined);
     },
   })),
@@ -104,6 +105,7 @@ async function run(cmd: QueryDatanetCommand): Promise<{ exitCode: number; stdout
 interface Result {
   datanetId: string;
   valid: boolean;
+  currentEpoch: number | null;
   accessFeeREPPO: { formatted?: string } | { unavailable: string };
   metadata: Record<string, unknown>;
 }
@@ -131,6 +133,7 @@ describe('query datanet — metadata enrichment', () => {
 
     // On-chain answer intact.
     expect(out.valid).toBe(true);
+    expect(out.currentEpoch).toBe(97);
     // Catalog metadata merged, numerics as strings.
     const m = out.metadata;
     expect(m.name).toBe('TradingGym AI');

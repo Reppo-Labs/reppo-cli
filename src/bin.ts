@@ -16,6 +16,7 @@ import { MintPodCommand } from './commands/mint-pod.js';
 import { QueryBalanceCommand } from './commands/query/balance.js';
 import { QueryDatanetCommand } from './commands/query/datanet.js';
 import { QueryEmissionsDueCommand } from './commands/query/emissions-due.js';
+import { QueryEpochCommand } from './commands/query/epoch.js';
 import { QueryPodCommand } from './commands/query/pod.js';
 import { QueryVotingPowerCommand } from './commands/query/voting-power.js';
 import { RegisterAgentCommand } from './commands/register-agent.js';
@@ -25,7 +26,7 @@ import { VoteCommand } from './commands/vote.js';
 const cli = new Cli({
   binaryLabel: 'Reppo CLI',
   binaryName: 'reppo',
-  binaryVersion: '0.7.0',
+  binaryVersion: '0.8.0',
   enableCapture: false,
 });
 
@@ -44,6 +45,7 @@ cli.register(MintPodCommand);
 cli.register(QueryBalanceCommand);
 cli.register(QueryDatanetCommand);
 cli.register(QueryEmissionsDueCommand);
+cli.register(QueryEpochCommand);
 cli.register(QueryPodCommand);
 cli.register(QueryVotingPowerCommand);
 cli.register(RegisterAgentCommand);
