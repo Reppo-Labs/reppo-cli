@@ -29,7 +29,7 @@ import { createClients, nextNonce } from '../chain/clients.js';
 import { podManager, subnetManager } from '../chain/contracts.js';
 import { decodeRevert } from '../chain/errors.js';
 import { handleSubmittedCacheDecision } from './write-cache.js';
-import { waitForWriteReceipt } from '../chain/receipt.js';
+import { waitForWriteReceipt, receiptGasEth } from '../chain/receipt.js';
 import { begin, markSubmitted, markConfirmed, markFailed, peekIdempotent } from '../state/idempotency.js';
 import {
   pinDatasetToIpfs,
@@ -281,6 +281,7 @@ export class MintPodCommand extends BaseCommand {
       const basescanUrl = basescanUrlFor(tx);
       const result: Record<string, unknown> = {
         txHash: tx,
+        gasEth: receiptGasEth(receipt),
         datanetId: datanetId.toString(),
         token: this.token,
         to: target,

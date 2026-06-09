@@ -3,7 +3,7 @@
  * failures so agents get stable error codes instead of INTERNAL_ERROR.
  */
 import type { Hash, TransactionReceipt } from 'viem';
-import { WaitForTransactionReceiptTimeoutError } from 'viem';
+import { WaitForTransactionReceiptTimeoutError, formatEther } from 'viem';
 import { cliError } from '../output/format.js';
 
 type ReceiptWaitClient = {
@@ -12,6 +12,15 @@ type ReceiptWaitClient = {
     timeout?: number;
   }): Promise<TransactionReceipt>;
 };
+
+/**
+ * Gas cost of a confirmed tx in ETH, as a decimal string: gasUsed ×
+ * effectiveGasPrice (wei) → ether. Surfaced in write-command JSON so consumers
+ * (e.g. budget accounting) can track on-chain spend without re-deriving it.
+ */
+export function receiptGasEth(receipt: TransactionReceipt): string {
+  return formatEther(receipt.gasUsed * receipt.effectiveGasPrice);
+}
 
 export async function waitForWriteReceipt(
   publicClient: ReceiptWaitClient,

@@ -27,7 +27,7 @@ import { createClients, nextNonce } from '../chain/clients.js';
 import { veReppo } from '../chain/contracts.js';
 import { decodeRevert } from '../chain/errors.js';
 import { handleSubmittedCacheDecision } from './write-cache.js';
-import { waitForWriteReceipt } from '../chain/receipt.js';
+import { waitForWriteReceipt, receiptGasEth } from '../chain/receipt.js';
 import { begin, markSubmitted, markConfirmed, markFailed, peekIdempotent } from '../state/idempotency.js';
 
 const COMMAND = 'unlock';
@@ -220,6 +220,7 @@ export class UnlockCommand extends BaseCommand {
 
       const result = {
         txHash: tx,
+        gasEth: receiptGasEth(receipt),
         lockupId: lockupId.toString(),
         to: target,
         amount: { raw: amount.toString(), formatted: formatUnits(amount, 18) },
