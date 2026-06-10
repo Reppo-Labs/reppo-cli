@@ -21,7 +21,7 @@ import { createClients, nextNonce } from '../chain/clients.js';
 import { veReppo } from '../chain/contracts.js';
 import { decodeRevert } from '../chain/errors.js';
 import { handleSubmittedCacheDecision } from './write-cache.js';
-import { waitForWriteReceipt } from '../chain/receipt.js';
+import { waitForWriteReceipt, receiptGasEth } from '../chain/receipt.js';
 import { begin, markSubmitted, markConfirmed, markFailed, peekIdempotent } from '../state/idempotency.js';
 
 const COMMAND = 'extend-lock';
@@ -234,6 +234,7 @@ export class ExtendLockCommand extends BaseCommand {
         lockupId: lockupId.toString(),
         durationAdded: duration.toString(),
         txHash: tx,
+        gasEth: receiptGasEth(receipt),
         block: receipt.blockNumber.toString(),
         basescanUrl: cfg.network === 'mainnet'
           ? `https://basescan.org/tx/${tx}`

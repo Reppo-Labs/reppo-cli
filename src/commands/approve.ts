@@ -33,6 +33,7 @@ import {
   usdcToken,
 } from '../chain/contracts.js';
 import { decodeRevert } from '../chain/errors.js';
+import { receiptGasEth } from '../chain/receipt.js';
 import {
   begin,
   markSubmitted,
@@ -245,6 +246,7 @@ export class ApproveCommand extends BaseCommand {
 
       const result = {
         txHash: tx,
+        gasEth: receiptGasEth(receipt),
         token: tokenName,
         spender: spenderAddr,
         owner: clients.account.address,

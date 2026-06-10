@@ -28,7 +28,7 @@ import { createClients, nextNonce } from '../chain/clients.js';
 import { podManager, veReppo } from '../chain/contracts.js';
 import { decodeRevert } from '../chain/errors.js';
 import { handleSubmittedCacheDecision } from './write-cache.js';
-import { waitForWriteReceipt } from '../chain/receipt.js';
+import { waitForWriteReceipt, receiptGasEth } from '../chain/receipt.js';
 import { begin, markSubmitted, markConfirmed, markFailed, peekIdempotent } from '../state/idempotency.js';
 
 const COMMAND = 'vote';
@@ -231,6 +231,7 @@ export class VoteCommand extends BaseCommand {
 
       const result = {
         txHash: tx,
+        gasEth: receiptGasEth(receipt),
         podId: podId.toString(),
         votes: votes.toString(),
         like: likeBool,
