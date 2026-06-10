@@ -3,6 +3,7 @@
  * @reppo/cli entry point. Registers every command class and dispatches
  * via clipanion's runExit.
  */
+import { readFileSync } from 'node:fs';
 import { Cli, Builtins } from 'clipanion';
 import { ApproveCommand } from './commands/approve.js';
 import { AuthCommand } from './commands/auth.js';
@@ -23,10 +24,22 @@ import { RegisterAgentCommand } from './commands/register-agent.js';
 import { UnlockCommand } from './commands/unlock.js';
 import { VoteCommand } from './commands/vote.js';
 
+// Read the version from package.json so `reppo --version` never drifts from the
+// published package. package.json sits one dir above this module (dist/bin.js →
+// dist/, and src/bin.ts → src/; ../package.json resolves to the repo root in both).
+function packageVersion(): string {
+  try {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version?: string };
+    return pkg.version ?? '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
+
 const cli = new Cli({
   binaryLabel: 'Reppo CLI',
   binaryName: 'reppo',
-  binaryVersion: '0.8.0',
+  binaryVersion: packageVersion(),
   enableCapture: false,
 });
 
