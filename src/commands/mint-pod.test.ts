@@ -20,6 +20,7 @@ interface PublishIntentShape {
   podName: string;
   podDescription: string;
   url: string;
+  imageUrl: string;
   category: string;
   platform: string;
   agentId: string;
@@ -33,6 +34,7 @@ interface MintPodFields {
   podDescription: string | undefined;
   subnetUuid: string | undefined;
   podUrl: string | undefined;
+  imageUrl: string | undefined;
   category: string;
   platform: string;
   dataset: string | undefined;
@@ -47,6 +49,7 @@ function makeCmd(overrides: Partial<MintPodFields> = {}): MintPodFields {
   cmd.podDescription = overrides.podDescription;
   cmd.subnetUuid = overrides.subnetUuid;
   cmd.podUrl = overrides.podUrl;
+  cmd.imageUrl = overrides.imageUrl;
   cmd.category = overrides.category ?? 'Dataset';
   cmd.platform = overrides.platform ?? 'reppo-cli';
   cmd.dataset = overrides.dataset;
@@ -161,5 +164,14 @@ describe('resolvePublishIntent — dataset modes', () => {
     expect(intent?.dataset).toEqual({ kind: 'none' });
     expect(intent?.subnetUuid).toBe('cmnhuowns000bic04e16t6735');
     expect(intent?.agentId).toBe('agent-123');
+  });
+
+  it('carries a trimmed --image-url and --url through the intent', () => {
+    const intent = validCmd({
+      podUrl: '  https://news.example/article  ',
+      imageUrl: '  https://news.example/og.jpg  ',
+    }).resolvePublishIntent(cfg());
+    expect(intent?.url).toBe('https://news.example/article')
+    expect(intent?.imageUrl).toBe('https://news.example/og.jpg')
   });
 });

@@ -52,6 +52,7 @@ interface PublishIntent {
   podName: string;
   podDescription: string;
   url: string;
+  imageUrl: string;
   category: string;
   platform: string;
   agentId: string;
@@ -101,7 +102,8 @@ export class MintPodCommand extends BaseCommand {
   podName = Option.String('--pod-name', { description: `Pod display name (≤${POD_NAME_MAX} chars). Providing it enables Phase-2 metadata publishing.` });
   podDescription = Option.String('--pod-description', { description: `Pod description (≤${POD_DESCRIPTION_MAX} chars)` });
   subnetUuid = Option.String('--subnet-uuid', { description: 'Platform subnet UUID (cuid, e.g. cmnhuowns…) — NOT the on-chain --datanet id. Required for publishing.' });
-  podUrl = Option.String('--url', { description: 'Primary content URL for the pod (overridden by the dataset URI when a dataset is pinned/provided)' });
+  podUrl = Option.String('--url', { description: 'Primary content URL for the pod (the clickable link on the platform). A pinned dataset is attached separately as the downloadable, so this stays the human-viewable page.' });
+  imageUrl = Option.String('--image-url', { description: 'Image URL for the pod card (sets imageURL + thumbnailURL).' });
   category = Option.String('--category', 'Dataset', { description: 'Pod category label (default "Dataset")' });
   platform = Option.String('--platform', 'reppo-cli', { description: 'Publishing platform label (default "reppo-cli")' });
   dataset = Option.String('--dataset', { description: 'Local dataset file to pin to IPFS (needs PINATA_JWT). Mutually exclusive with --dataset-uri.' });
@@ -419,6 +421,7 @@ export class MintPodCommand extends BaseCommand {
       podName: name,
       podDescription: description,
       url: (this.podUrl ?? '').trim(),
+      imageUrl: (this.imageUrl ?? '').trim(),
       category: this.category,
       platform: this.platform,
       agentId,
@@ -463,19 +466,21 @@ export class MintPodCommand extends BaseCommand {
       };
     }
 
-    // The dataset URI, when present, is the pod's primary content link and
-    // its downloadable-file slot (mirrors the aeon postprocess body).
+    // The pod's primary `url` is the human-viewable page (intent.url, e.g. the
+    // source article) when provided; the pinned dataset is attached as the
+    // downloadable (pdfURL) and the dataset URI. Only when no human url is given
+    // does the dataset URI become the primary link (back-compat).
     const body: PodMetadata = {
       txHash,
       subnetId: intent.subnetUuid,
       podName: intent.podName,
       podDescription: intent.podDescription,
-      url: datasetUri || intent.url,
+      url: intent.url || datasetUri,
       platform: intent.platform,
       category: intent.category,
       agreeToTerms: true,
-      imageURL: '',
-      thumbnailURL: '',
+      imageURL: intent.imageUrl,
+      thumbnailURL: intent.imageUrl,
       pdfURL: datasetUri || '',
       videoURL: '',
     };
