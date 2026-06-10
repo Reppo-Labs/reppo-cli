@@ -30,7 +30,7 @@ import { createClients, nextNonce } from '../chain/clients.js';
 import { veReppo, reppoToken } from '../chain/contracts.js';
 import { decodeRevert } from '../chain/errors.js';
 import { handleSubmittedCacheDecision } from './write-cache.js';
-import { waitForWriteReceipt } from '../chain/receipt.js';
+import { waitForWriteReceipt, receiptGasEth } from '../chain/receipt.js';
 import { begin, markSubmitted, markConfirmed, markFailed, peekIdempotent } from '../state/idempotency.js';
 
 const COMMAND = 'lock';
@@ -232,6 +232,7 @@ export class LockCommand extends BaseCommand {
 
       const result = {
         txHash: tx,
+        gasEth: receiptGasEth(receipt),
         amount: { raw: amount.toString(), formatted: formatUnits(amount, 18) },
         duration: duration.toString(),
         votingPowerGained: { raw: previewPower.toString(), formatted: formatUnits(previewPower, 18) },
