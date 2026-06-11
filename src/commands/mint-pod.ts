@@ -26,10 +26,10 @@ import { isAddress, type Address } from 'viem';
 import { BaseCommand } from './_base.js';
 import { cliError, emit } from '../output/format.js';
 import { createClients, nextNonce } from '../chain/clients.js';
-import { podManager, subnetManager } from '../chain/contracts.js';
+import { podManager, subnetManager, reppoToken } from '../chain/contracts.js';
 import { decodeRevert } from '../chain/errors.js';
 import { handleSubmittedCacheDecision } from './write-cache.js';
-import { waitForWriteReceipt, receiptGasEth } from '../chain/receipt.js';
+import { waitForWriteReceipt, receiptGasEth, reppoFeeFromReceipt } from '../chain/receipt.js';
 import { begin, markSubmitted, markConfirmed, markFailed, peekIdempotent } from '../state/idempotency.js';
 import {
   pinDatasetToIpfs,
@@ -284,6 +284,7 @@ export class MintPodCommand extends BaseCommand {
       const result: Record<string, unknown> = {
         txHash: tx,
         gasEth: receiptGasEth(receipt),
+        reppoFee: reppoFeeFromReceipt(receipt, reppoToken(cfg.network).address, clients.account.address),
         datanetId: datanetId.toString(),
         token: this.token,
         to: target,
