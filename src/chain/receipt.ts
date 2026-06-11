@@ -2,7 +2,7 @@
  * Shared receipt helpers for write commands. Classifies viem receipt-wait
  * failures so agents get stable error codes instead of INTERNAL_ERROR.
  */
-import type { Hash, TransactionReceipt } from 'viem';
+import type { Address, Hash, TransactionReceipt } from 'viem';
 import { WaitForTransactionReceiptTimeoutError, formatEther } from 'viem';
 import { cliError } from '../output/format.js';
 
@@ -20,6 +20,28 @@ type ReceiptWaitClient = {
  */
 export function receiptGasEth(receipt: TransactionReceipt): string {
   return formatEther(receipt.gasUsed * receipt.effectiveGasPrice);
+}
+
+// keccak256("Transfer(address,address,uint256)") — the ERC20 Transfer topic.
+const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+
+/**
+ * Actual REPPO paid in a confirmed tx, as a decimal-ether string: sums the
+ * token's Transfer events where `from` is the caller. Surfaced in write-command
+ * JSON (like gasEth) so consumers can reconcile budget accounting to ACTUAL
+ * fees instead of estimates. Returns "0" when no transfer from caller exists.
+ */
+export function reppoFeeFromReceipt(receipt: TransactionReceipt, reppoToken: Address, caller: Address): string {
+  const token = reppoToken.toLowerCase();
+  const from = caller.toLowerCase().slice(2).padStart(64, '0');
+  let total = 0n;
+  for (const log of receipt.logs ?? []) {
+    if (log.address.toLowerCase() !== token) continue;
+    if ((log.topics?.[0] ?? '').toLowerCase() !== TRANSFER_TOPIC) continue;
+    if ((log.topics?.[1] ?? '').toLowerCase().slice(2) !== from) continue;
+    try { total += BigInt(log.data); } catch { /* malformed log data — skip */ }
+  }
+  return formatEther(total);
 }
 
 export async function waitForWriteReceipt(
