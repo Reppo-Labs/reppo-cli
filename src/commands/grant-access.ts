@@ -123,7 +123,7 @@ export class GrantAccessCommand extends BaseCommand {
           args,
           network: cfg.network,
           publicClient: clients2.publicClient,
-          buildResult: async () => ({ datanetId: datanetId.toString(), to: target, token: this.token }),
+          buildResult: () => ({ datanetId: datanetId.toString(), to: target, token: this.token }),
         });
       }
 

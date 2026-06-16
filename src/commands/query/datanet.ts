@@ -140,9 +140,9 @@ export class QueryDatanetCommand extends BaseCommand {
       let primaryToken: { address: string; decimals: number } | undefined;
       if (valid) {
         try {
-          const primaryAddr = (await client.readContract({
+          const primaryAddr = await client.readContract({
             ...sm, functionName: 'getSubnetPrimaryToken', args: [datanetId],
-          })) as Address;
+          });
           const ft = erc20(primaryAddr);
           const [dec, pFee] = await Promise.all([
             client.readContract({ ...ft, functionName: 'decimals' }),
