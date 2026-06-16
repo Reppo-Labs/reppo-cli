@@ -22,7 +22,7 @@ import { privateKeyToAddress } from 'viem/accounts';
 import { BaseCommand } from '../_base.js';
 import { cliError, emit } from '../../output/format.js';
 import { createReadClient } from '../../chain/clients.js';
-import { trySubnetManager, tryVeReppo } from '../../chain/contracts.js';
+import { trySubnetManager, tryVeReppo, erc20 } from '../../chain/contracts.js';
 import { DEFAULT_PUBLIC_API_URL } from '../../api/public.js';
 import { fetchSubnetByTokenId, numericToString, type RawSubnet } from '../../api/subnets.js';
 
@@ -133,6 +133,29 @@ export class QueryDatanetCommand extends BaseCommand {
             .then((v) => ({ raw: v.toString(), formatted: formatUnits(v, 18) }))
         : unavailable('datanet does not exist');
 
+      // Primary-token access fee — for datanets that charge access in their own
+      // token rather than REPPO. Best-effort and decimals-aware: a revert here
+      // (or a datanet with no primary token) must NOT break the REPPO answer.
+      let accessFeePrimaryToken: Numeric = unavailable('not read');
+      let primaryToken: { address: string; decimals: number } | undefined;
+      if (valid) {
+        try {
+          const primaryAddr = (await client.readContract({
+            ...sm, functionName: 'getSubnetPrimaryToken', args: [datanetId],
+          })) as Address;
+          const ft = erc20(primaryAddr);
+          const [dec, pFee] = await Promise.all([
+            client.readContract({ ...ft, functionName: 'decimals' }),
+            client.readContract({ ...sm, functionName: 'getAccessFeePrimaryToken', args: [datanetId] }),
+          ]);
+          const decimals = Number(dec);
+          primaryToken = { address: primaryAddr, decimals };
+          accessFeePrimaryToken = { raw: pFee.toString(), formatted: formatUnits(pFee, decimals) };
+        } catch {
+          accessFeePrimaryToken = unavailable('primary-token access fee unavailable');
+        }
+      }
+
       // Optional caller-access check.
       const callerAddr = this.resolveCallerAddress(cfg.privateKey);
       const callerAccess = callerAddr && valid
@@ -150,6 +173,8 @@ export class QueryDatanetCommand extends BaseCommand {
         valid,
         currentEpoch,
         accessFeeREPPO,
+        accessFeePrimaryToken,
+        ...(primaryToken ? { primaryToken } : {}),
         ...(callerAccess ? { callerAccess } : {}),
         metadata,
       };
