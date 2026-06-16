@@ -112,18 +112,31 @@ export class GrantAccessCommand extends BaseCommand {
         return 0;
       }
       if (decision.kind === 'return-submitted') {
-        const clients2 = createClients({
-          network: cfg.network,
-          privateKey: pk,
-          ...(cfg.rpcUrl ? { rpcUrl: cfg.rpcUrl } : {}),
-        });
+        // Reuse `clients` (already built above); recompute feePaid/gasEth from the
+        // receipt so a reconciled-confirmed result has the same keys as a
+        // fresh-confirmed one. feeToken {address,decimals} survives on the cached
+        // submitted record (markSubmitted stored feeFields).
+        const ftMeta = decision.result.feeToken as { address: Address; decimals: number } | undefined;
         return handleSubmittedCacheDecision(decision, {
           idempotencyKey: this.idempotencyKey,
           command: COMMAND,
           args,
           network: cfg.network,
-          publicClient: clients2.publicClient,
-          buildResult: () => ({ datanetId: datanetId.toString(), to: target, token: this.token }),
+          publicClient: clients.publicClient,
+          buildResult: (receipt) => {
+            const base: Record<string, unknown> = {
+              datanetId: datanetId.toString(),
+              to: target,
+              token: this.token,
+              gasEth: receiptGasEth(receipt),
+            };
+            if (ftMeta) {
+              const feePaid = tokenFeeFromReceipt(receipt, ftMeta.address, clients.account.address, ftMeta.decimals);
+              base.feePaid = feePaid;
+              if (this.token === 'reppo') base.reppoFee = feePaid;
+            }
+            return base;
+          },
         });
       }
 
@@ -141,16 +154,31 @@ export class GrantAccessCommand extends BaseCommand {
         feeTokenDecimals = 18;
         feeTokenSymbol = 'REPPO';
       } else {
-        feeTokenAddress = await clients.publicClient.readContract({
-          address: sm.address, abi: sm.abi, functionName: 'getSubnetPrimaryToken', args: [datanetId],
-        });
+        let primaryAddr: Address;
+        try {
+          primaryAddr = await clients.publicClient.readContract({
+            address: sm.address, abi: sm.abi, functionName: 'getSubnetPrimaryToken', args: [datanetId],
+          });
+        } catch {
+          throw cliError('DATANET_HAS_NO_PRIMARY_TOKEN',
+            `Could not resolve a primary token for datanet ${datanetId} on ${cfg.network}.`,
+            'This datanet likely charges access in REPPO only — retry without `--token primary`.');
+        }
+        // getSubnetPrimaryToken returns address(0) for REPPO-only datanets.
+        if (BigInt(primaryAddr) === 0n) {
+          throw cliError('DATANET_HAS_NO_PRIMARY_TOKEN',
+            `Datanet ${datanetId} has no primary token configured.`,
+            'This datanet charges access in REPPO only — retry without `--token primary`.');
+        }
+        feeTokenAddress = primaryAddr;
         const ft = erc20(feeTokenAddress);
-        const [dec, sym] = await Promise.all([
-          clients.publicClient.readContract({ ...ft, functionName: 'decimals' }),
-          clients.publicClient.readContract({ ...ft, functionName: 'symbol' }),
-        ]);
+        const dec = await clients.publicClient.readContract({ ...ft, functionName: 'decimals' });
         feeTokenDecimals = Number(dec);
-        feeTokenSymbol = sym;
+        // symbol is cosmetic — best-effort: some tokens return bytes32, which would
+        // fail to decode against the `string` ABI and abort the whole command.
+        feeTokenSymbol = await clients.publicClient
+          .readContract({ ...ft, functionName: 'symbol' })
+          .catch(() => `${feeTokenAddress.slice(0, 6)}…${feeTokenAddress.slice(-4)}`);
       }
       const feeToken = erc20(feeTokenAddress);
 
@@ -242,10 +270,14 @@ export class GrantAccessCommand extends BaseCommand {
         throw cliError('TX_REVERTED', `grant-access tx reverted: ${tx}`);
       }
 
+      const feePaid = tokenFeeFromReceipt(receipt, feeTokenAddress, clients.account.address, feeTokenDecimals);
       const result = {
         txHash: tx,
         gasEth: receiptGasEth(receipt),
-        feePaid: tokenFeeFromReceipt(receipt, feeTokenAddress, clients.account.address, feeTokenDecimals),
+        feePaid,
+        // Legacy top-level field for back-compat with pre-0.8.5 consumers that
+        // read `reppoFee`; only meaningful on the REPPO path.
+        ...(this.token === 'reppo' ? { reppoFee: feePaid } : {}),
         datanetId: datanetId.toString(),
         to: target,
         token: this.token,
@@ -257,9 +289,11 @@ export class GrantAccessCommand extends BaseCommand {
       };
       if (this.idempotencyKey) await markConfirmed(this.idempotencyKey, COMMAND, args, result, tx);
 
+      // Show the on-chain fee quote (always correct); feePaid in JSON is the
+      // receipt-derived actual, which can read 0 for non-standard transfer flows.
       emit(result, [
         `✓ Granted ${target} access to datanet ${datanetId}`,
-        `  fee paid: ${result.feePaid} ${feeTokenSymbol}`,
+        `  fee: ${result.feeAmount.formatted} ${feeTokenSymbol}`,
         `  tx: ${result.basescanUrl}`,
         `  block: ${receipt.blockNumber}`,
       ]);

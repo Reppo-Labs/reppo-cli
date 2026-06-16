@@ -152,7 +152,10 @@ export class QueryDatanetCommand extends BaseCommand {
           primaryToken = { address: primaryAddr, decimals };
           accessFeePrimaryToken = { raw: pFee.toString(), formatted: formatUnits(pFee, decimals) };
         } catch {
-          accessFeePrimaryToken = unavailable('primary-token access fee unavailable');
+          // Either the datanet has no primary token (revert) or the read failed
+          // (transport). Best-effort — don't assert which, and never break the
+          // REPPO answer above.
+          accessFeePrimaryToken = unavailable('no primary token, or read failed');
         }
       }
 
