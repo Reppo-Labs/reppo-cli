@@ -1,11 +1,16 @@
 /**
- * `reppo approve --spender <alias|0x...> [--amount <units|max>] [--token reppo|usdc]`
+ * `reppo approve --spender <alias|0x...> [--amount <units|max>] [--token reppo|usdc|0x...]`
  * — set an ERC20 allowance so subsequent write commands (lock, grant-access,
  * mint-pod) don't fail with INSUFFICIENT_ALLOWANCE.
  *
  * Most agent flows want unlimited approval once, so `--amount` defaults to
- * `max` (MaxUint256). Pass a numeric value (in human REPPO/USDC units) for a
+ * `max` (MaxUint256). Pass a numeric value (in human token units) for a
  * bounded approval.
+ *
+ * `--token` accepts the `reppo`/`usdc` aliases (decimals known statically) or
+ * an arbitrary ERC20 token ADDRESS (0x…) — e.g. a datanet's primary token, so
+ * an operator can approve it for the SubnetManager. For an address the token's
+ * `decimals()` is read on-chain for amount scaling (never assumed 18).
  *
  * Spender aliases resolve per network:
  *   - pod-manager     → PodManager      (mintPodWithREPPO, mintPodWithPrimaryToken)
@@ -31,6 +36,7 @@ import {
   veReppo,
   reppoToken,
   usdcToken,
+  erc20,
 } from '../chain/contracts.js';
 import { decodeRevert } from '../chain/errors.js';
 import { receiptGasEth } from '../chain/receipt.js';
@@ -70,7 +76,7 @@ export class ApproveCommand extends BaseCommand {
   static override paths = [['approve']];
 
   static override usage = BaseCommand.Usage({
-    description: 'Approve a Reppo contract to spend your REPPO (or USDC) tokens.',
+    description: 'Approve a Reppo contract to spend your REPPO, USDC, or an arbitrary ERC20 token.',
     examples: [
       ['Unlimited REPPO approval for veREPPO (default amount=max)',
         'reppo approve --spender ve-reppo'],
@@ -78,6 +84,8 @@ export class ApproveCommand extends BaseCommand {
         'reppo approve --spender subnet-manager --amount 100'],
       ['USDC approval for PodManager (mintPodWithPrimaryToken)',
         'reppo approve --spender pod-manager --token usdc --amount 50'],
+      ["Approve a datanet's primary token (arbitrary ERC20 address) for SubnetManager",
+        'reppo approve --spender subnet-manager --token 0xEeEE…0000 --amount 25'],
       ['Raw spender address + idempotency key',
         'reppo approve --spender 0xabc...def --amount max --idempotency-key approve-veReppo-once'],
       ['Dry-run',
@@ -87,18 +95,23 @@ export class ApproveCommand extends BaseCommand {
 
   spender = Option.String('--spender', { required: true, description: 'pod-manager | subnet-manager | ve-reppo | 0x-address' });
   amount = Option.String('--amount', 'max', { description: 'Token amount in human units, or "max" for MaxUint256 (default).' });
-  token = Option.String('--token', 'reppo', { description: 'reppo (default) or usdc' });
+  token = Option.String('--token', 'reppo', { description: 'reppo (default), usdc, or an arbitrary ERC20 token address (0x…)' });
   idempotencyKey = Option.String('--idempotency-key');
   dryRun = Option.Boolean('--dry-run', false);
 
   async execute(): Promise<number> {
     try {
-      // Validate token + spender BEFORE loadConfig (cheapest path).
-      if (!TOKEN_NAMES.has(this.token as TokenName)) {
-        throw cliError('INVALID_TOKEN', `--token must be reppo or usdc; got "${this.token}".`);
+      // Validate --token early: a reppo/usdc alias, or an arbitrary ERC20
+      // address. INVALID_TOKEN for anything that's neither. (decimals for the
+      // address path is read on-chain below — it needs the RPC client.)
+      const tokenIsAlias = TOKEN_NAMES.has(this.token as TokenName);
+      const tokenIsAddress = isAddress(this.token);
+      if (!tokenIsAlias && !tokenIsAddress) {
+        throw cliError(
+          'INVALID_TOKEN',
+          `--token must be reppo, usdc, or a 0x-prefixed ERC20 address; got "${this.token}".`,
+        );
       }
-      const tokenName = this.token as TokenName;
-      const decimals = tokenName === 'reppo' ? 18 : 6;
 
       const cfg = this.loadConfig();
       const pk = cfg.privateKey;
@@ -111,6 +124,43 @@ export class ApproveCommand extends BaseCommand {
       }
 
       const spenderAddr = resolveSpender(this.spender, cfg.network);
+
+      const clients = createClients({
+        network: cfg.network,
+        privateKey: pk,
+        ...(cfg.rpcUrl ? { rpcUrl: cfg.rpcUrl } : {}),
+      });
+
+      // Resolve the token contract, its decimals, and a display/fingerprint
+      // label. Aliases pin decimals statically; an address reads decimals()
+      // on-chain (catch → clean cliError) so amount scaling is never wrong.
+      // reppoToken/usdcToken and erc20 all return Contract<typeof ERC20_ABI>.
+      let token: ReturnType<typeof erc20>;
+      let decimals: number;
+      // tokenLabel: stable identifier for the args fingerprint + result `token` field
+      //   (alias name, or the lowercased address). tokenDisplay: human-mode label.
+      let tokenLabel: string;
+      let tokenDisplay: string;
+      if (tokenIsAlias) {
+        const tokenName = this.token as TokenName;
+        token = tokenName === 'reppo' ? reppoToken(cfg.network) : usdcToken(cfg.network);
+        decimals = tokenName === 'reppo' ? 18 : 6;
+        tokenLabel = tokenName;
+        tokenDisplay = tokenName.toUpperCase();
+      } else {
+        const tokenAddr = this.token as Address;
+        token = erc20(tokenAddr);
+        decimals = await clients.publicClient
+          .readContract({ ...token, functionName: 'decimals' })
+          .then((dec) => Number(dec))
+          .catch(() => {
+            throw cliError('INVALID_TOKEN',
+              `Could not read decimals() for token ${tokenAddr} on ${cfg.network}.`,
+              'The address is not a standard ERC20 (decimals() reverted or returned non-numeric data).');
+          });
+        tokenLabel = tokenAddr.toLowerCase();
+        tokenDisplay = tokenAddr;
+      }
 
       let amount: bigint;
       if (this.amount === 'max') {
@@ -135,7 +185,7 @@ export class ApproveCommand extends BaseCommand {
       // Args fingerprint baked into the cache so re-using one key with a
       // different (token, spender, amount) → IDEMPOTENCY_ARGS_MISMATCH.
       const args = {
-        token: tokenName,
+        token: tokenLabel,
         spender: spenderAddr.toLowerCase(),
         amount: amount.toString(),
       };
@@ -158,13 +208,6 @@ export class ApproveCommand extends BaseCommand {
         return 0;
       }
 
-      const clients = createClients({
-        network: cfg.network,
-        privateKey: pk,
-        ...(cfg.rpcUrl ? { rpcUrl: cfg.rpcUrl } : {}),
-      });
-      const token = tokenName === 'reppo' ? reppoToken(cfg.network) : usdcToken(cfg.network);
-
       // Pre-flight: skip the tx entirely if the existing allowance already
       // covers the request. Saves gas and matches agent re-runnability.
       const currentAllowance = await clients.publicClient.readContract({
@@ -179,7 +222,7 @@ export class ApproveCommand extends BaseCommand {
 
       if (currentAllowance >= amount) {
         const result = {
-          token: tokenName,
+          token: tokenLabel,
           spender: spenderAddr,
           owner: clients.account.address,
           requested: fmtAmt(amount),
@@ -191,7 +234,7 @@ export class ApproveCommand extends BaseCommand {
         // `markConfirmed` requires a real txHash. Re-reading the chain
         // allowance on retry is cheap and authoritative.
         emit(result, [
-          `= No-op: ${tokenName.toUpperCase()} allowance from ${clients.account.address} to ${spenderAddr}`,
+          `= No-op: ${tokenDisplay} allowance from ${clients.account.address} to ${spenderAddr}`,
           `  is already ${fmtAmt(currentAllowance).formatted} (>= requested ${fmtAmt(amount).formatted}).`,
         ]);
         return 0;
@@ -207,7 +250,7 @@ export class ApproveCommand extends BaseCommand {
         });
         emit({
           simulated: true,
-          token: tokenName,
+          token: tokenLabel,
           spender: spenderAddr,
           owner: clients.account.address,
           requested: fmtAmt(amount),
@@ -247,7 +290,7 @@ export class ApproveCommand extends BaseCommand {
       const result = {
         txHash: tx,
         gasEth: receiptGasEth(receipt),
-        token: tokenName,
+        token: tokenLabel,
         spender: spenderAddr,
         owner: clients.account.address,
         requested: fmtAmt(amount),
@@ -260,7 +303,7 @@ export class ApproveCommand extends BaseCommand {
       if (this.idempotencyKey) await markConfirmed(this.idempotencyKey, COMMAND, args, result, tx);
 
       emit(result, [
-        `✓ Approved ${spenderAddr} to spend ${fmtAmt(amount).formatted} ${tokenName.toUpperCase()}`,
+        `✓ Approved ${spenderAddr} to spend ${fmtAmt(amount).formatted} ${tokenDisplay}`,
         `  tx: ${result.basescanUrl}`,
         `  block: ${receipt.blockNumber}`,
       ]);

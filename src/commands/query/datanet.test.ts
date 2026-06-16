@@ -11,6 +11,12 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+// Per-test control over what getSubnetPrimaryToken resolves to: a real token
+// address by default, or address(0) for the REPPO-only (no primary token) case.
+const NON_ZERO_PRIMARY = '0xEeEE000000000000000000000000000000000000';
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
+let primaryTokenAddr = NON_ZERO_PRIMARY;
+
 // Deterministic chain reads — dispatch on the function name the command calls.
 vi.mock('../../chain/clients.js', () => ({
   createReadClient: vi.fn(() => ({
@@ -19,9 +25,10 @@ vi.mock('../../chain/clients.js', () => ({
       if (functionName === 'getAccessFeeREPPO') return Promise.resolve(50n * 10n ** 18n);
       if (functionName === 'hasSubnetAccess') return Promise.resolve(false);
       if (functionName === 'currentEpoch') return Promise.resolve(97n);
-      if (functionName === 'getSubnetPrimaryToken') return Promise.resolve('0xEeEE000000000000000000000000000000000000');
+      if (functionName === 'getSubnetPrimaryToken') return Promise.resolve(primaryTokenAddr);
       if (functionName === 'getAccessFeePrimaryToken') return Promise.resolve(25n * 10n ** 18n);
       if (functionName === 'decimals') return Promise.resolve(18);
+      if (functionName === 'symbol') return Promise.resolve('EXY');
       return Promise.resolve(undefined);
     },
   })),
@@ -111,12 +118,13 @@ interface Result {
   currentEpoch: number | null;
   accessFeeREPPO: { formatted?: string } | { unavailable: string };
   accessFeePrimaryToken: { formatted?: string } | { unavailable: string };
-  primaryToken?: { address: string; decimals: number };
+  primaryToken?: { address: string; symbol: string; decimals: number };
   metadata: Record<string, unknown>;
 }
 
 beforeEach(() => {
   setOutputMode('json');
+  primaryTokenAddr = NON_ZERO_PRIMARY;
   delete process.env.REPPO_NETWORK;
   delete process.env.REPPO_PRIVATE_KEY;
   delete process.env.REPPO_PUBLIC_API_URL;
@@ -152,7 +160,28 @@ describe('query datanet — metadata enrichment', () => {
     // Primary-token access fee surfaced for non-REPPO-fee datanets.
     expect('formatted' in out.accessFeePrimaryToken ? out.accessFeePrimaryToken.formatted : null).toBe('25');
     expect(out.primaryToken?.address).toBe('0xEeEE000000000000000000000000000000000000');
+    expect(out.primaryToken?.symbol).toBe('EXY');
     expect(out.primaryToken?.decimals).toBe(18);
+  });
+
+  it('omits primaryToken and reports "no primary token" when getSubnetPrimaryToken is the zero address', async () => {
+    primaryTokenAddr = ZERO_ADDRESS;
+    vi.stubGlobal('fetch', vi.fn(() =>
+      Promise.resolve(jsonResponse({ data: { subnets: [FULL_ROW] } })),
+    ));
+
+    const r = await run(makeCmd('9'));
+    expect(r.exitCode).toBe(0);
+    const out = JSON.parse(r.stdout) as Result;
+
+    // On-chain REPPO answer still intact.
+    expect(out.valid).toBe(true);
+    expect('formatted' in out.accessFeeREPPO ? out.accessFeeREPPO.formatted : null).toBe('50');
+    // No primary token: primaryToken omitted, fee marked unavailable with the
+    // DISTINCT no-token wording (not the read-failure wording).
+    expect(out.primaryToken).toBeUndefined();
+    expect('unavailable' in out.accessFeePrimaryToken ? out.accessFeePrimaryToken.unavailable : null)
+      .toBe('datanet has no primary token');
   });
 
   it('degrades to { unavailable } when the datanet is absent from the catalog', async () => {
