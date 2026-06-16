@@ -5,7 +5,9 @@ import {
   tryVeReppo,
   tryReppoToken,
   tryUsdcToken,
+  erc20,
 } from './contracts.js';
+import { SUBNET_MANAGER_ABI } from './abis.js';
 
 describe('tryX() non-throwing contract helpers', () => {
   describe('mainnet', () => {
@@ -49,5 +51,30 @@ describe('tryX() non-throwing contract helpers', () => {
     it('returns null for USDC (TBD on testnet)', () => {
       expect(tryUsdcToken('testnet')).toBeNull();
     });
+  });
+});
+
+describe('SUBNET_MANAGER_ABI — primary-token access surface', () => {
+  const fnNames = SUBNET_MANAGER_ABI.filter((e) => e.type === 'function').map((e) => e.name);
+
+  it('includes accessSubnetWithPrimaryTokenFee', () => {
+    expect(fnNames).toContain('accessSubnetWithPrimaryTokenFee');
+  });
+  it('includes getAccessFeePrimaryToken', () => {
+    expect(fnNames).toContain('getAccessFeePrimaryToken');
+  });
+  it('includes getSubnetPrimaryToken', () => {
+    expect(fnNames).toContain('getSubnetPrimaryToken');
+  });
+});
+
+describe('erc20(address) — generic ERC20 resolver', () => {
+  it('binds the ERC20 ABI to an arbitrary token address', () => {
+    const addr = '0x1234567890123456789012345678901234567890' as const;
+    const c = erc20(addr);
+    expect(c.address).toBe(addr);
+    expect(c.abi.some((e) => e.type === 'function' && e.name === 'decimals')).toBe(true);
+    expect(c.abi.some((e) => e.type === 'function' && e.name === 'balanceOf')).toBe(true);
+    expect(c.abi.some((e) => e.type === 'function' && e.name === 'allowance')).toBe(true);
   });
 });
