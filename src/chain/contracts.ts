@@ -65,6 +65,15 @@ export function usdcToken(network: Network): Contract<typeof ERC20_ABI> {
   };
 }
 
+/**
+ * Generic ERC20 resolver for a token whose address is discovered at runtime
+ * (e.g. a datanet's primary token via getSubnetPrimaryToken), not pinned in
+ * addresses.ts. No TBD check — the caller already holds a concrete address.
+ */
+export function erc20(address: Address): Contract<typeof ERC20_ABI> {
+  return { address, abi: ERC20_ABI };
+}
+
 // ── Non-throwing variants ──────────────────────────────────────────────
 //
 // Read commands (e.g. `query balance`) need to render an `unavailable`

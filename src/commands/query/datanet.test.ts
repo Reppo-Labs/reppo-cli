@@ -19,6 +19,9 @@ vi.mock('../../chain/clients.js', () => ({
       if (functionName === 'getAccessFeeREPPO') return Promise.resolve(50n * 10n ** 18n);
       if (functionName === 'hasSubnetAccess') return Promise.resolve(false);
       if (functionName === 'currentEpoch') return Promise.resolve(97n);
+      if (functionName === 'getSubnetPrimaryToken') return Promise.resolve('0xEeEE000000000000000000000000000000000000');
+      if (functionName === 'getAccessFeePrimaryToken') return Promise.resolve(25n * 10n ** 18n);
+      if (functionName === 'decimals') return Promise.resolve(18);
       return Promise.resolve(undefined);
     },
   })),
@@ -107,6 +110,8 @@ interface Result {
   valid: boolean;
   currentEpoch: number | null;
   accessFeeREPPO: { formatted?: string } | { unavailable: string };
+  accessFeePrimaryToken: { formatted?: string } | { unavailable: string };
+  primaryToken?: { address: string; decimals: number };
   metadata: Record<string, unknown>;
 }
 
@@ -144,6 +149,10 @@ describe('query datanet — metadata enrichment', () => {
     expect((m.nativeToken as { decimals: number }).decimals).toBe(18);
     expect(m.onboardingPublishers).toContain('Hyperliquid');
     expect(m.onboardingVoters).toContain('Score Pods');
+    // Primary-token access fee surfaced for non-REPPO-fee datanets.
+    expect('formatted' in out.accessFeePrimaryToken ? out.accessFeePrimaryToken.formatted : null).toBe('25');
+    expect(out.primaryToken?.address).toBe('0xEeEE000000000000000000000000000000000000');
+    expect(out.primaryToken?.decimals).toBe(18);
   });
 
   it('degrades to { unavailable } when the datanet is absent from the catalog', async () => {

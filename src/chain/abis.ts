@@ -34,9 +34,12 @@ export const POD_MANAGER_ABI = parseAbi([
 
 export const SUBNET_MANAGER_ABI = parseAbi([
   'function accessSubnetWithREPPOFee(uint256 subnetId, address to)',
+  'function accessSubnetWithPrimaryTokenFee(uint256 subnetId, address to)',
   'function hasSubnetAccess(uint256 subnetId, address address_) view returns (bool)',
   'function validSubnet(uint256 subnetId) view returns (bool)',
   'function getAccessFeeREPPO(uint256 subnetId) view returns (uint256)',
+  'function getAccessFeePrimaryToken(uint256 subnetId) view returns (uint256)',
+  'function getSubnetPrimaryToken(uint256 subnetId) view returns (address)',
 ]);
 
 export const VE_REPPO_ABI = parseAbi([

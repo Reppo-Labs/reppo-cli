@@ -199,6 +199,12 @@ describe('grant-access', () => {
     expect(r.exitCode).not.toBe(0);
     expect(parseError(r.stderr).code).toBe('MISSING_PRIVATE_KEY');
   });
+
+  it('rejects unknown --token with INVALID_TOKEN', async () => {
+    const r = await runCli(['grant-access', '--datanet', '19', '--token', 'bogus', ...JSON_FLAG], { REPPO_PRIVATE_KEY: FAKE_PK, REPPO_NETWORK: 'testnet' });
+    expect(r.exitCode).not.toBe(0);
+    expect(parseError(r.stderr).code).toBe('INVALID_TOKEN');
+  });
 });
 
 describe('claim-emissions', () => {
