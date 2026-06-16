@@ -142,6 +142,18 @@ export class GrantAccessCommand extends BaseCommand {
 
       const sm = subnetManager(cfg.network);
 
+      // Validate the datanet BEFORE resolving the fee token. A nonexistent
+      // datanet must surface DATANET_NOT_FOUND — not DATANET_HAS_NO_PRIMARY_TOKEN
+      // (getSubnetPrimaryToken returns address(0) for a missing subnet too, which
+      // would otherwise mis-report the cause on the `--token primary` path).
+      const valid = await clients.publicClient.readContract({
+        address: sm.address, abi: sm.abi, functionName: 'validSubnet', args: [datanetId],
+      });
+      if (!valid) {
+        throw cliError('DATANET_NOT_FOUND', `Datanet ${datanetId} does not exist on ${cfg.network}.`,
+          `Verify the id; check \`reppo query datanet ${datanetId}\` before granting access.`);
+      }
+
       // Resolve the fee token: REPPO (pinned) or the datanet's primary token
       // (discovered on-chain). decimals MUST be read for the primary token,
       // never assumed 18 — a non-18-decimal token would otherwise corrupt every
@@ -172,8 +184,17 @@ export class GrantAccessCommand extends BaseCommand {
         }
         feeTokenAddress = primaryAddr;
         const ft = erc20(feeTokenAddress);
-        const dec = await clients.publicClient.readContract({ ...ft, functionName: 'decimals' });
-        feeTokenDecimals = Number(dec);
+        // decimals has no safe default — a wrong value corrupts every amount —
+        // so a read failure is a hard error, not a guess. Wrap it like symbol()
+        // below so a raw viem decode error doesn't surface as INTERNAL_ERROR.
+        feeTokenDecimals = await clients.publicClient
+          .readContract({ ...ft, functionName: 'decimals' })
+          .then((dec) => Number(dec))
+          .catch(() => {
+            throw cliError('INVALID_PRIMARY_TOKEN',
+              `Could not read decimals() for datanet ${datanetId} primary token ${feeTokenAddress}.`,
+              'The primary token is not a standard ERC20 (decimals() reverted or returned non-numeric data).');
+          });
         // symbol is cosmetic — best-effort: some tokens return bytes32, which would
         // fail to decode against the `string` ABI and abort the whole command.
         feeTokenSymbol = await clients.publicClient
@@ -182,19 +203,14 @@ export class GrantAccessCommand extends BaseCommand {
       }
       const feeToken = erc20(feeTokenAddress);
 
-      // Pre-flight in parallel where independent.
-      const [valid, alreadyHasAccess, fee, balance, allowance] = await Promise.all([
-        clients.publicClient.readContract({ address: sm.address, abi: sm.abi, functionName: 'validSubnet', args: [datanetId] }),
+      // Pre-flight in parallel where independent (validSubnet already checked above).
+      const [alreadyHasAccess, fee, balance, allowance] = await Promise.all([
         clients.publicClient.readContract({ address: sm.address, abi: sm.abi, functionName: 'hasSubnetAccess', args: [datanetId, target] }),
         clients.publicClient.readContract({ address: sm.address, abi: sm.abi, functionName: fns.feeGetter, args: [datanetId] }),
         clients.publicClient.readContract({ ...feeToken, functionName: 'balanceOf', args: [clients.account.address] }),
         clients.publicClient.readContract({ ...feeToken, functionName: 'allowance', args: [clients.account.address, sm.address] }),
       ]);
 
-      if (!valid) {
-        throw cliError('DATANET_NOT_FOUND', `Datanet ${datanetId} does not exist on ${cfg.network}.`,
-          `Verify the id; check \`reppo query datanet ${datanetId}\` before granting access.`);
-      }
       if (alreadyHasAccess) {
         throw cliError('ACCESS_ALREADY_GRANTED', `${target} already has access to datanet ${datanetId}.`,
           'Nothing to do — skip the call.');

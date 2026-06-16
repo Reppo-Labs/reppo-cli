@@ -137,25 +137,38 @@ export class QueryDatanetCommand extends BaseCommand {
       // token rather than REPPO. Best-effort and decimals-aware: a revert here
       // (or a datanet with no primary token) must NOT break the REPPO answer.
       let accessFeePrimaryToken: Numeric = unavailable('not read');
-      let primaryToken: { address: string; decimals: number } | undefined;
+      let primaryToken: { address: string; symbol: string; decimals: number } | undefined;
       if (valid) {
         try {
           const primaryAddr = await client.readContract({
             ...sm, functionName: 'getSubnetPrimaryToken', args: [datanetId],
           });
-          const ft = erc20(primaryAddr);
-          const [dec, pFee] = await Promise.all([
-            client.readContract({ ...ft, functionName: 'decimals' }),
-            client.readContract({ ...sm, functionName: 'getAccessFeePrimaryToken', args: [datanetId] }),
-          ]);
-          const decimals = Number(dec);
-          primaryToken = { address: primaryAddr, decimals };
-          accessFeePrimaryToken = { raw: pFee.toString(), formatted: formatUnits(pFee, decimals) };
+          // getSubnetPrimaryToken returns address(0) for REPPO-only datanets.
+          // Short-circuit BEFORE touching the token (mirrors grant-access.ts's
+          // guard): no decimals()/symbol()/fee read, and primaryToken stays
+          // undefined. The wording is DISTINCT from a read failure so callers
+          // can tell "this datanet has no primary token" apart from a transport
+          // error.
+          if (BigInt(primaryAddr) === 0n) {
+            accessFeePrimaryToken = unavailable('datanet has no primary token');
+          } else {
+            const ft = erc20(primaryAddr);
+            const [dec, sym, pFee] = await Promise.all([
+              client.readContract({ ...ft, functionName: 'decimals' }),
+              // symbol is cosmetic — best-effort: bytes32/non-standard tokens fail
+              // to decode against the `string` ABI; fall back to '' rather than abort.
+              client.readContract({ ...ft, functionName: 'symbol' }).catch(() => ''),
+              client.readContract({ ...sm, functionName: 'getAccessFeePrimaryToken', args: [datanetId] }),
+            ]);
+            const decimals = Number(dec);
+            primaryToken = { address: primaryAddr, symbol: sym, decimals };
+            accessFeePrimaryToken = { raw: pFee.toString(), formatted: formatUnits(pFee, decimals) };
+          }
         } catch {
-          // Either the datanet has no primary token (revert) or the read failed
-          // (transport). Best-effort — don't assert which, and never break the
-          // REPPO answer above.
-          accessFeePrimaryToken = unavailable('no primary token, or read failed');
+          // The read failed (transport, or a non-standard token's decimals()/fee
+          // getter reverted). Best-effort — never break the REPPO answer above.
+          // Wording is distinct from the no-primary-token case above.
+          accessFeePrimaryToken = unavailable('primary-token access fee read failed');
         }
       }
 
@@ -193,6 +206,14 @@ export class QueryDatanetCommand extends BaseCommand {
         `Current epoch: ${currentEpoch ?? '(unavailable)'}`,
         `Access fee:    ${feeFmt}`,
       ];
+      // Primary-token access fee — shown only when the datanet actually has a
+      // primary token (primaryToken present implies accessFeePrimaryToken is numeric).
+      if (primaryToken && 'formatted' in accessFeePrimaryToken) {
+        lines.push(
+          `Access fee (primary): ${accessFeePrimaryToken.formatted} ${primaryToken.symbol} ` +
+            `(${primaryToken.address}, ${primaryToken.decimals} dp)`,
+        );
+      }
       if (callerAccess) {
         lines.push(`Caller:        ${callerAccess.address}`);
         lines.push(`Caller access: ${callerAccess.hasAccess}`);
