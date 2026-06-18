@@ -16,7 +16,8 @@
  *   3. hasSubnetAccess(datanetId, to)   → ACCESS_ALREADY_GRANTED
  *   4. fee getter                       → fee amount (in the fee token)
  *   5. feeToken balance >= fee          → INSUFFICIENT_REPPO_BALANCE / INSUFFICIENT_TOKEN_BALANCE
- *   6. feeToken allowance(caller→sm) ≥  → INSUFFICIENT_ALLOWANCE
+ *   6. feeToken allowance(caller→sm): a short allowance is AUTO-APPROVED
+ *      (unlimited approve() + wait) before the access call — no longer a hard error.
  *
  * Idempotency: begin → submit → markSubmitted → wait → markConfirmed.
  * Args fingerprint: { datanetId, to, token }.
@@ -27,6 +28,7 @@ import { BaseCommand } from './_base.js';
 import { cliError, emit } from '../output/format.js';
 import { createClients, nextNonce } from '../chain/clients.js';
 import { subnetManager, reppoToken, erc20 } from '../chain/contracts.js';
+import { ensureAllowance } from '../chain/allowance.js';
 import { decodeRevert } from '../chain/errors.js';
 import { handleSubmittedCacheDecision } from './write-cache.js';
 import { waitForWriteReceipt, receiptGasEth, tokenFeeFromReceipt } from '../chain/receipt.js';
@@ -222,13 +224,10 @@ export class GrantAccessCommand extends BaseCommand {
           `Acquire more ${feeTokenSymbol} before granting access.`,
         );
       }
-      if (allowance < fee) {
-        throw cliError('INSUFFICIENT_ALLOWANCE',
-          `${feeTokenSymbol} allowance from ${clients.account.address} to SubnetManager is ${formatUnits(allowance, feeTokenDecimals)}, ` +
-          `below the fee of ${formatUnits(fee, feeTokenDecimals)} ${feeTokenSymbol}.`,
-          `Approve the SubnetManager (${sm.address}) for at least ${formatUnits(fee, feeTokenDecimals)} ${feeTokenSymbol} ` +
-          `(send the approve() tx manually, e.g. via cast).`);
-      }
+      // Auto-approval: a short allowance no longer hard-fails. The real-write path
+      // (below) sends an unlimited approve() to SubnetManager for the fee token before
+      // the access call; dry-run only reports it (the access sim would revert).
+      const needsApproval = allowance < fee;
 
       const feeFields = {
         feeToken: { symbol: feeTokenSymbol, address: feeTokenAddress, decimals: feeTokenDecimals },
@@ -240,6 +239,21 @@ export class GrantAccessCommand extends BaseCommand {
       };
 
       if (this.dryRun) {
+        if (needsApproval) {
+          // Can't simulate the access call without allowance (it would revert). Report
+          // the approve that the real run would send first.
+          emit({
+            simulated: true,
+            wouldAutoApprove: { token: feeTokenAddress, spender: sm.address, currentAllowance: formatUnits(allowance, feeTokenDecimals) },
+            datanetId: datanetId.toString(),
+            to: target,
+            token: this.token,
+            ...feeFields,
+          }, [
+            `(dry-run) would auto-approve SubnetManager for ${feeTokenSymbol}, then grant ${target} access to datanet ${datanetId}`,
+          ]);
+          return 0;
+        }
         const sim = await clients.publicClient.simulateContract({
           address: sm.address, abi: sm.abi, functionName: fns.access,
           args: [datanetId, target], account: clients.account,
@@ -257,6 +271,11 @@ export class GrantAccessCommand extends BaseCommand {
         });
         return 0;
       }
+
+      // Auto-approve SubnetManager to pull the fee token before the access call (no-op
+      // when already approved). Outside the idempotency two-phase: approve() is
+      // self-idempotent via the allowance read, and waiting advances the nonce.
+      const approval = await ensureAllowance(clients, feeTokenAddress, sm.address, fee, allowance);
 
       if (this.idempotencyKey) await begin(this.idempotencyKey, COMMAND, args);
 
@@ -290,6 +309,7 @@ export class GrantAccessCommand extends BaseCommand {
       const result = {
         txHash: tx,
         gasEth: receiptGasEth(receipt),
+        ...(approval.approved ? { autoApproveTx: approval.approveTx } : {}),
         feePaid,
         // Legacy top-level field for back-compat with pre-0.8.5 consumers that
         // read `reppoFee`; only meaningful on the REPPO path.
@@ -308,6 +328,7 @@ export class GrantAccessCommand extends BaseCommand {
       // Show the on-chain fee quote (always correct); feePaid in JSON is the
       // receipt-derived actual, which can read 0 for non-standard transfer flows.
       emit(result, [
+        ...(approval.approved ? [`✓ Auto-approved SubnetManager for ${feeTokenSymbol} (tx: ${approval.approveTx})`] : []),
         `✓ Granted ${target} access to datanet ${datanetId}`,
         `  fee: ${result.feeAmount.formatted} ${feeTokenSymbol}`,
         `  tx: ${result.basescanUrl}`,
