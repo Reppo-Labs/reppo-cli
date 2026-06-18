@@ -8,7 +8,8 @@
  *   1. INVALID_AMOUNT / INVALID_DURATION (parse)
  *   2. DURATION_OUT_OF_BOUNDS  (min/maxStakeDuration)
  *   3. INSUFFICIENT_REPPO_BALANCE
- *   4. INSUFFICIENT_ALLOWANCE  (caller → veReppo)
+ *   4. allowance (caller → veReppo): a short allowance is AUTO-APPROVED
+ *      (unlimited approve() + wait) before stake — no longer a hard error.
  *   5. previewPoints captures the predicted voting-power-gained for the
  *      result payload; also surfaces in dry-run.
  *
@@ -28,6 +29,7 @@ import { BaseCommand } from './_base.js';
 import { cliError, emit } from '../output/format.js';
 import { createClients, nextNonce } from '../chain/clients.js';
 import { veReppo, reppoToken } from '../chain/contracts.js';
+import { ensureAllowance } from '../chain/allowance.js';
 import { decodeRevert } from '../chain/errors.js';
 import { handleSubmittedCacheDecision } from './write-cache.js';
 import { waitForWriteReceipt, receiptGasEth } from '../chain/receipt.js';
@@ -168,17 +170,27 @@ export class LockCommand extends BaseCommand {
         );
       }
 
-      if (allowance < amount) {
-        throw cliError(
-          'INSUFFICIENT_ALLOWANCE',
-          `REPPO allowance from ${clients.account.address} to veReppo is ${formatUnits(allowance, 18)}, ` +
-          `below the lock amount of ${formatUnits(amount, 18)} REPPO.`,
-          `Approve veReppo (${vr.address}) for at least ${formatUnits(amount, 18)} REPPO. ` +
-          `Auto-approval lands in v0.2; for the alpha, send the approve() tx manually.`,
-        );
-      }
+      // Auto-approval: a short allowance no longer hard-fails. The real-write path
+      // (below) sends an unlimited approve() to veReppo before stake; dry-run only
+      // reports it (the stake sim would revert with no allowance).
+      const needsApproval = allowance < amount;
 
       if (this.dryRun) {
+        if (needsApproval) {
+          // Can't simulate stake without allowance (it would revert). Report the
+          // approve that the real run would send first.
+          emit({
+            simulated: true,
+            wouldAutoApprove: { token: reppo.address, spender: vr.address, currentAllowance: formatUnits(allowance, 18) },
+            amount: { raw: amount.toString(), formatted: formatUnits(amount, 18) },
+            duration: duration.toString(),
+            votingPowerGained: { raw: previewPower.toString(), formatted: formatUnits(previewPower, 18) },
+            predictedExpiresAt: previewEnd.toString(),
+          }, [
+            `(dry-run) would auto-approve veReppo for REPPO, then lock ${formatUnits(amount, 18)} REPPO for ${duration}s`,
+          ]);
+          return 0;
+        }
         const sim = await clients.publicClient.simulateContract({
           address: vr.address, abi: vr.abi, functionName: 'stake',
           args: [amount, duration], account: clients.account,
@@ -197,6 +209,11 @@ export class LockCommand extends BaseCommand {
         });
         return 0;
       }
+
+      // Auto-approve veReppo to pull REPPO before stake (no-op when already approved).
+      // Outside the idempotency two-phase on purpose: approve() is self-idempotent via
+      // the allowance read, and waiting for its receipt advances the nonce for stake.
+      const approval = await ensureAllowance(clients, reppo.address, vr.address, amount, allowance);
 
       if (this.idempotencyKey) await begin(this.idempotencyKey, COMMAND, args);
 
@@ -233,6 +250,7 @@ export class LockCommand extends BaseCommand {
       const result = {
         txHash: tx,
         gasEth: receiptGasEth(receipt),
+        ...(approval.approved ? { autoApproveTx: approval.approveTx } : {}),
         amount: { raw: amount.toString(), formatted: formatUnits(amount, 18) },
         duration: duration.toString(),
         votingPowerGained: { raw: previewPower.toString(), formatted: formatUnits(previewPower, 18) },
@@ -247,6 +265,7 @@ export class LockCommand extends BaseCommand {
       if (this.idempotencyKey) await markConfirmed(this.idempotencyKey, COMMAND, args, result, tx);
 
       emit(result, [
+        ...(approval.approved ? [`✓ Auto-approved veReppo for REPPO (tx: ${approval.approveTx})`] : []),
         `✓ Locked ${formatUnits(amount, 18)} REPPO for ${duration}s`,
         `  voting power gained: ${formatUnits(previewPower, 18)}`,
         `  tx: ${result.basescanUrl}`,
