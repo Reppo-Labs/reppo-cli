@@ -39,6 +39,12 @@ export const SUBNET_MANAGER_ABI = parseAbi([
   'function validSubnet(uint256 subnetId) view returns (bool)',
   'function getAccessFeeREPPO(uint256 subnetId) view returns (uint256)',
   'function getAccessFeePrimaryToken(uint256 subnetId) view returns (uint256)',
+  // Per-mint fee mintPodWithREPPO/mintPodWithPrimaryToken pulls from the signer —
+  // SEPARATE from the one-time access fee. Surfaced by `query datanet` so
+  // publishers can pre-flight balance before a mint reverts
+  // TransferAmountExceedsBalance (verified on the deployed impl 0xead1a577…).
+  'function getPublishingFeeREPPO(uint256 subnetId) view returns (uint256)',
+  'function getPublishingFeePrimaryToken(uint256 subnetId) view returns (uint256)',
   'function getSubnetPrimaryToken(uint256 subnetId) view returns (address)',
 ]);
 

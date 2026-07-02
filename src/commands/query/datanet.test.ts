@@ -27,6 +27,8 @@ vi.mock('../../chain/clients.js', () => ({
       if (functionName === 'currentEpoch') return Promise.resolve(97n);
       if (functionName === 'getSubnetPrimaryToken') return Promise.resolve(primaryTokenAddr);
       if (functionName === 'getAccessFeePrimaryToken') return Promise.resolve(25n * 10n ** 18n);
+      if (functionName === 'getPublishingFeeREPPO') return Promise.resolve(500n * 10n ** 18n);
+      if (functionName === 'getPublishingFeePrimaryToken') return Promise.resolve(10n * 10n ** 18n);
       if (functionName === 'decimals') return Promise.resolve(18);
       if (functionName === 'symbol') return Promise.resolve('EXY');
       return Promise.resolve(undefined);
@@ -118,6 +120,8 @@ interface Result {
   currentEpoch: number | null;
   accessFeeREPPO: { formatted?: string } | { unavailable: string };
   accessFeePrimaryToken: { formatted?: string } | { unavailable: string };
+  publishingFeeREPPO: { formatted?: string } | { unavailable: string };
+  publishingFeePrimaryToken: { formatted?: string } | { unavailable: string };
   primaryToken?: { address: string; symbol: string; decimals: number };
   metadata: Record<string, unknown>;
 }
@@ -162,6 +166,11 @@ describe('query datanet — metadata enrichment', () => {
     expect(out.primaryToken?.address).toBe('0xEeEE000000000000000000000000000000000000');
     expect(out.primaryToken?.symbol).toBe('EXY');
     expect(out.primaryToken?.decimals).toBe(18);
+
+    // Per-mint publishing fees — separate from the one-time access fee, so
+    // publishers can pre-flight balance before mint-pod reverts on-chain.
+    expect('formatted' in out.publishingFeeREPPO ? out.publishingFeeREPPO.formatted : null).toBe('500');
+    expect('formatted' in out.publishingFeePrimaryToken ? out.publishingFeePrimaryToken.formatted : null).toBe('10');
   });
 
   it('omits primaryToken and reports "no primary token" when getSubnetPrimaryToken is the zero address', async () => {
@@ -181,6 +190,10 @@ describe('query datanet — metadata enrichment', () => {
     // DISTINCT no-token wording (not the read-failure wording).
     expect(out.primaryToken).toBeUndefined();
     expect('unavailable' in out.accessFeePrimaryToken ? out.accessFeePrimaryToken.unavailable : null)
+      .toBe('datanet has no primary token');
+    // REPPO publishing fee still surfaced; primary-token one marked no-token.
+    expect('formatted' in out.publishingFeeREPPO ? out.publishingFeeREPPO.formatted : null).toBe('500');
+    expect('unavailable' in out.publishingFeePrimaryToken ? out.publishingFeePrimaryToken.unavailable : null)
       .toBe('datanet has no primary token');
   });
 
