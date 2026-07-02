@@ -133,10 +133,22 @@ export class QueryDatanetCommand extends BaseCommand {
             .then((v) => ({ raw: v.toString(), formatted: formatUnits(v, 18) }))
         : unavailable('datanet does not exist');
 
+      // Per-mint publishing fee — what mintPodWithREPPO pulls from the signer on
+      // EVERY mint, separate from (and additional to) the one-time access fee.
+      // Surfaced so publishers can pre-flight balance instead of discovering the
+      // fee via a TransferAmountExceedsBalance revert that still burns gas.
+      // Best-effort: a revert here must not break the authoritative fields above.
+      const publishingFeeREPPO: Numeric = valid
+        ? await client.readContract({ ...sm, functionName: 'getPublishingFeeREPPO', args: [datanetId] })
+            .then((v) => ({ raw: v.toString(), formatted: formatUnits(v, 18) }))
+            .catch(() => unavailable('publishing fee read failed'))
+        : unavailable('datanet does not exist');
+
       // Primary-token access fee — for datanets that charge access in their own
       // token rather than REPPO. Best-effort and decimals-aware: a revert here
       // (or a datanet with no primary token) must NOT break the REPPO answer.
       let accessFeePrimaryToken: Numeric = unavailable('not read');
+      let publishingFeePrimaryToken: Numeric = unavailable('not read');
       let primaryToken: { address: string; symbol: string; decimals: number } | undefined;
       if (valid) {
         try {
@@ -151,24 +163,31 @@ export class QueryDatanetCommand extends BaseCommand {
           // error.
           if (BigInt(primaryAddr) === 0n) {
             accessFeePrimaryToken = unavailable('datanet has no primary token');
+            publishingFeePrimaryToken = unavailable('datanet has no primary token');
           } else {
             const ft = erc20(primaryAddr);
-            const [dec, sym, pFee] = await Promise.all([
+            const [dec, sym, pFee, pubFee] = await Promise.all([
               client.readContract({ ...ft, functionName: 'decimals' }),
               // symbol is cosmetic — best-effort: bytes32/non-standard tokens fail
               // to decode against the `string` ABI; fall back to '' rather than abort.
               client.readContract({ ...ft, functionName: 'symbol' }).catch(() => ''),
               client.readContract({ ...sm, functionName: 'getAccessFeePrimaryToken', args: [datanetId] }),
+              // best-effort like the symbol read — null sentinel keeps the access fee intact.
+              client.readContract({ ...sm, functionName: 'getPublishingFeePrimaryToken', args: [datanetId] }).catch(() => null),
             ]);
             const decimals = Number(dec);
             primaryToken = { address: primaryAddr, symbol: sym, decimals };
             accessFeePrimaryToken = { raw: pFee.toString(), formatted: formatUnits(pFee, decimals) };
+            publishingFeePrimaryToken = pubFee === null
+              ? unavailable('publishing fee read failed')
+              : { raw: pubFee.toString(), formatted: formatUnits(pubFee, decimals) };
           }
         } catch {
           // The read failed (transport, or a non-standard token's decimals()/fee
           // getter reverted). Best-effort — never break the REPPO answer above.
           // Wording is distinct from the no-primary-token case above.
           accessFeePrimaryToken = unavailable('primary-token access fee read failed');
+          publishingFeePrimaryToken = unavailable('primary-token publishing fee read failed');
         }
       }
 
@@ -190,6 +209,8 @@ export class QueryDatanetCommand extends BaseCommand {
         currentEpoch,
         accessFeeREPPO,
         accessFeePrimaryToken,
+        publishingFeeREPPO,
+        publishingFeePrimaryToken,
         ...(primaryToken ? { primaryToken } : {}),
         ...(callerAccess ? { callerAccess } : {}),
         metadata,
@@ -198,6 +219,9 @@ export class QueryDatanetCommand extends BaseCommand {
       const feeFmt = 'unavailable' in accessFeeREPPO
         ? `(unavailable: ${accessFeeREPPO.unavailable})`
         : `${accessFeeREPPO.formatted} REPPO`;
+      const pubFeeFmt = 'unavailable' in publishingFeeREPPO
+        ? `(unavailable: ${publishingFeeREPPO.unavailable})`
+        : `${publishingFeeREPPO.formatted} REPPO per mint`;
 
       const lines = [
         `Datanet:       ${datanetId}`,
@@ -205,13 +229,19 @@ export class QueryDatanetCommand extends BaseCommand {
         `Valid:         ${valid}`,
         `Current epoch: ${currentEpoch ?? '(unavailable)'}`,
         `Access fee:    ${feeFmt}`,
+        `Publish fee:   ${pubFeeFmt}`,
       ];
-      // Primary-token access fee — shown only when the datanet actually has a
-      // primary token (primaryToken present implies accessFeePrimaryToken is numeric).
+      // Primary-token fees — shown only when the datanet actually has a
+      // primary token (primaryToken present implies the fees are numeric).
       if (primaryToken && 'formatted' in accessFeePrimaryToken) {
         lines.push(
           `Access fee (primary): ${accessFeePrimaryToken.formatted} ${primaryToken.symbol} ` +
             `(${primaryToken.address}, ${primaryToken.decimals} dp)`,
+        );
+      }
+      if (primaryToken && 'formatted' in publishingFeePrimaryToken) {
+        lines.push(
+          `Publish fee (primary): ${publishingFeePrimaryToken.formatted} ${primaryToken.symbol} per mint`,
         );
       }
       if (callerAccess) {

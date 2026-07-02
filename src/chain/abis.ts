@@ -27,6 +27,11 @@ export const POD_MANAGER_ABI = parseAbi([
   'function getPodValidityEpoch(uint256 podId) view returns (uint256)',
   'function getPodUpVotesOfEpoch(uint256 epoch, uint256 podId) view returns (uint256)',
   'function getPodDownVotesOfEpoch(uint256 epoch, uint256 podId) view returns (uint256)',
+  // Per-voter vote counts on a pod in an epoch (verified on impl 0x474d4f03…).
+  // V2 exposes no per-(voter,pod) due-AMOUNT view, so `query voter-emissions-due`
+  // derives CLAIMABILITY from these: voted > 0 && !hasUserClaimedEmissions.
+  'function getVotersUpVotesForPodInEpoch(uint256 epoch, uint256 podId, address voter) view returns (uint256)',
+  'function getVotersDownVotesForPodInEpoch(uint256 epoch, uint256 podId, address voter) view returns (uint256)',
   'function hasPodOwnerClaimedEmissions(uint256 epoch, uint256 podId) view returns (bool)',
   'function hasUserClaimedEmissions(uint256 epoch, uint256 podId, address user) view returns (bool)',
   'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)',
@@ -39,6 +44,12 @@ export const SUBNET_MANAGER_ABI = parseAbi([
   'function validSubnet(uint256 subnetId) view returns (bool)',
   'function getAccessFeeREPPO(uint256 subnetId) view returns (uint256)',
   'function getAccessFeePrimaryToken(uint256 subnetId) view returns (uint256)',
+  // Per-mint fee mintPodWithREPPO/mintPodWithPrimaryToken pulls from the signer —
+  // SEPARATE from the one-time access fee. Surfaced by `query datanet` so
+  // publishers can pre-flight balance before a mint reverts
+  // TransferAmountExceedsBalance (verified on the deployed impl 0xead1a577…).
+  'function getPublishingFeeREPPO(uint256 subnetId) view returns (uint256)',
+  'function getPublishingFeePrimaryToken(uint256 subnetId) view returns (uint256)',
   'function getSubnetPrimaryToken(uint256 subnetId) view returns (address)',
 ]);
 
