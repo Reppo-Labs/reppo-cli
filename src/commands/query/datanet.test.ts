@@ -16,6 +16,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 const NON_ZERO_PRIMARY = '0xEeEE000000000000000000000000000000000000';
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 let primaryTokenAddr = NON_ZERO_PRIMARY;
+// Per-test failure knobs for the best-effort publishing-fee reads — their
+// .catch degradation paths are unreachable with an always-succeeding mock.
+let pubFeeREPPOFails = false;
+let pubFeePrimaryFails = false;
 
 // Deterministic chain reads — dispatch on the function name the command calls.
 vi.mock('../../chain/clients.js', () => ({
@@ -27,8 +31,12 @@ vi.mock('../../chain/clients.js', () => ({
       if (functionName === 'currentEpoch') return Promise.resolve(97n);
       if (functionName === 'getSubnetPrimaryToken') return Promise.resolve(primaryTokenAddr);
       if (functionName === 'getAccessFeePrimaryToken') return Promise.resolve(25n * 10n ** 18n);
-      if (functionName === 'getPublishingFeeREPPO') return Promise.resolve(500n * 10n ** 18n);
-      if (functionName === 'getPublishingFeePrimaryToken') return Promise.resolve(10n * 10n ** 18n);
+      if (functionName === 'getPublishingFeeREPPO') {
+        return pubFeeREPPOFails ? Promise.reject(new Error('revert')) : Promise.resolve(500n * 10n ** 18n);
+      }
+      if (functionName === 'getPublishingFeePrimaryToken') {
+        return pubFeePrimaryFails ? Promise.reject(new Error('revert')) : Promise.resolve(10n * 10n ** 18n);
+      }
       if (functionName === 'decimals') return Promise.resolve(18);
       if (functionName === 'symbol') return Promise.resolve('EXY');
       return Promise.resolve(undefined);
@@ -129,6 +137,8 @@ interface Result {
 beforeEach(() => {
   setOutputMode('json');
   primaryTokenAddr = NON_ZERO_PRIMARY;
+  pubFeeREPPOFails = false;
+  pubFeePrimaryFails = false;
   delete process.env.REPPO_NETWORK;
   delete process.env.REPPO_PRIVATE_KEY;
   delete process.env.REPPO_PUBLIC_API_URL;
@@ -195,6 +205,39 @@ describe('query datanet — metadata enrichment', () => {
     expect('formatted' in out.publishingFeeREPPO ? out.publishingFeeREPPO.formatted : null).toBe('500');
     expect('unavailable' in out.publishingFeePrimaryToken ? out.publishingFeePrimaryToken.unavailable : null)
       .toBe('datanet has no primary token');
+  });
+
+  it('degrades the REPPO publishing fee to { unavailable } on a read revert — access fee intact', async () => {
+    pubFeeREPPOFails = true;
+    vi.stubGlobal('fetch', vi.fn(() =>
+      Promise.resolve(jsonResponse({ data: { subnets: [FULL_ROW] } })),
+    ));
+
+    const r = await run(makeCmd('9'));
+    expect(r.exitCode).toBe(0);
+    const out = JSON.parse(r.stdout) as Result;
+    // Best-effort contract: the failed publishing-fee read never breaks the
+    // authoritative access-fee answer.
+    expect('formatted' in out.accessFeeREPPO ? out.accessFeeREPPO.formatted : null).toBe('50');
+    expect('unavailable' in out.publishingFeeREPPO ? out.publishingFeeREPPO.unavailable : null)
+      .toBe('publishing fee read failed');
+  });
+
+  it('degrades the primary-token publishing fee on a read revert — primary access fee intact', async () => {
+    pubFeePrimaryFails = true;
+    vi.stubGlobal('fetch', vi.fn(() =>
+      Promise.resolve(jsonResponse({ data: { subnets: [FULL_ROW] } })),
+    ));
+
+    const r = await run(makeCmd('9'));
+    expect(r.exitCode).toBe(0);
+    const out = JSON.parse(r.stdout) as Result;
+    // The null-sentinel path: token metadata + access fee survive, only the
+    // publishing fee degrades.
+    expect(out.primaryToken?.symbol).toBe('EXY');
+    expect('formatted' in out.accessFeePrimaryToken ? out.accessFeePrimaryToken.formatted : null).toBe('25');
+    expect('unavailable' in out.publishingFeePrimaryToken ? out.publishingFeePrimaryToken.unavailable : null)
+      .toBe('publishing fee read failed');
   });
 
   it('degrades to { unavailable } when the datanet is absent from the catalog', async () => {

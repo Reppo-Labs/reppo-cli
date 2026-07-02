@@ -9,6 +9,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 let upVotes = 3n;
 let downVotes = 0n;
 let claimed = false;
+let pmAvailable = true;
 
 vi.mock('../../chain/clients.js', () => ({
   createReadClient: vi.fn(() => ({
@@ -20,6 +21,18 @@ vi.mock('../../chain/clients.js', () => ({
     },
   })),
 }));
+
+// Partial mock: every network currently configures a PodManager, so the
+// `if (!pm)` degraded branch is unreachable with the real tryPodManager —
+// the toggle makes its distinct output shape testable.
+vi.mock('../../chain/contracts.js', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('../../chain/contracts.js')>();
+  return {
+    ...orig,
+    tryPodManager: (network: Parameters<typeof orig.tryPodManager>[0]) =>
+      pmAvailable ? orig.tryPodManager(network) : null,
+  };
+});
 
 import { QueryVoterEmissionsDueCommand } from './voter-emissions-due.js';
 import { setOutputMode } from '../../output/format.js';
@@ -94,7 +107,7 @@ function errorCode(stderr: string): string {
 
 beforeEach(() => {
   setOutputMode('json');
-  upVotes = 3n; downVotes = 0n; claimed = false;
+  upVotes = 3n; downVotes = 0n; claimed = false; pmAvailable = true;
   delete process.env.REPPO_NETWORK;
   delete process.env.REPPO_PRIVATE_KEY;
   delete process.env.REPPO_VOTER_PRIVATE_KEY;
@@ -167,5 +180,24 @@ describe('query voter-emissions-due', () => {
     expect(r.exitCode).toBe(0);
     const out = JSON.parse(r.stdout) as Result;
     expect(out.voter.toLowerCase()).toBe('0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266');
+  });
+
+  it('degrades to { unavailable } (exit 0) when PodManager is not configured — pins the degraded shape', async () => {
+    pmAvailable = false;
+    const r = await run(makeCmd('34', '101', VOTER));
+    expect(r.exitCode).toBe(0);
+    const out = JSON.parse(r.stdout) as { claimable: { unavailable: string } };
+    // NOTE: claimable is an OBJECT here, not a boolean — consumers must handle both.
+    expect(out.claimable.unavailable).toContain('PodManager address not configured');
+  });
+
+  it('falls back to REPPO_PRIVATE_KEY when REPPO_VOTER_PRIVATE_KEY is unset (single-wallet setups)', async () => {
+    // anvil's canonical test key 1 — distinct from key 0 above so a mis-ordered
+    // fallback (voter key shadowing) would be caught.
+    process.env.REPPO_PRIVATE_KEY = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
+    const r = await run(makeCmd('34', '101'));
+    expect(r.exitCode).toBe(0);
+    const out = JSON.parse(r.stdout) as Result;
+    expect(out.voter.toLowerCase()).toBe('0x70997970c51812dc3a010c7d01b50e0d17dc79c8');
   });
 });
