@@ -1,6 +1,6 @@
 {
   "name": "@reppo/cli",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Command-line interface for Reppo — mint pods, vote, lock REPPO, manage datanets. Built for AI agents.",
   "license": "MIT",
   "author": "Reppo Labs",
