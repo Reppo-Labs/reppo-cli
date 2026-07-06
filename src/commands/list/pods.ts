@@ -371,9 +371,18 @@ export function parseWei(v: string | number | undefined | null): bigint {
 /** Raw pod row as returned by the public /api/v1/public/pods endpoint. */
 interface RawCommunityPod {
   name?: string;
+  // The full pod writeup shown on the Reppo pod page (e.g. ArAIstotle's analysis +
+  // sources + reasoning). Present in the API but was previously dropped — voters
+  // enriching from `url` only got the client-rendered SPA shell, so they scored the
+  // title alone. Surfacing it here lets a voter node score the real content.
+  description?: string;
   tokenId?: number | string;
   privateSubnetId?: string;
   url?: string;
+  imageUrl?: string;
+  thumbnailUrl?: string;
+  pdfUrl?: string;
+  videoUrl?: string;
   podValidityEpoch?: number | string;
   cumulativeUpVotesVolume?: number | string;
   cumulativeDownVotesVolume?: number | string;
@@ -450,15 +459,22 @@ async function listCommunityPods(
 
   const pods = limited.map((p) => {
     const cuid = p.privateSubnetId;
+    // Prefer a media URL as the content pointer when present (image/pdf/video pods),
+    // else the pod's own url. `description` carries the full writeup for text pods.
+    const mediaUrl = p.imageUrl ?? p.pdfUrl ?? p.videoUrl ?? p.thumbnailUrl;
     return {
       podId: p.tokenId !== undefined && p.tokenId !== null ? p.tokenId.toString() : '',
       name: p.name ?? '',
+      // Full pod writeup — the field a voter node scores. Empty string when absent
+      // (so consumers get a stable shape, not undefined).
+      description: p.description ?? '',
       creator: p.creator?.username ?? '',
       datanetId: cuid ? cuidToDatanetId.get(cuid) ?? null : null,
       upVotes: numericToString(p.cumulativeUpVotesVolume),
       downVotes: numericToString(p.cumulativeDownVotesVolume),
       validityEpoch: numericToString(p.podValidityEpoch),
       url: p.url ?? '',
+      ...(mediaUrl ? { mediaUrl } : {}),
     };
   });
 
