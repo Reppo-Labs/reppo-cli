@@ -498,10 +498,12 @@ describe('list pods', () => {
 interface CommunityPodOut {
   podId: string;
   name: string;
+  description: string;
   creator: string;
   datanetId: string | null;
   upVotes: string;
   downVotes: string;
+  mediaUrl?: string;
 }
 interface CommunityResult {
   scope: string;
@@ -562,6 +564,38 @@ describe('list pods --all (community scope)', () => {
       // Owner-scope platform calls must NOT happen in --all mode.
       expect(getOrRefreshSession).not.toHaveBeenCalled();
       expect(platformGet).not.toHaveBeenCalled();
+    } finally {
+      restoreEnv();
+    }
+  });
+
+  it('surfaces the full pod description and a media url for voter scoring', async () => {
+    const { cmd, restoreEnv } = makeCommand({ all: true });
+    try {
+      stubPublicApi({
+        pods: [communityPod({
+          tokenId: 42,
+          description: 'ArAIstotle YES 0.45 | mkt 0.605 | full analysis with sources…',
+          imageUrl: 'https://cdn.example/chart.png',
+        })],
+      });
+      await cmd.execute();
+      const out = JSON.parse(capturedJson!) as CommunityResult;
+      expect(out.pods[0]!.description).toContain('full analysis with sources');
+      expect(out.pods[0]!.mediaUrl).toBe('https://cdn.example/chart.png');
+    } finally {
+      restoreEnv();
+    }
+  });
+
+  it('defaults description to "" and omits mediaUrl when the API row lacks them', async () => {
+    const { cmd, restoreEnv } = makeCommand({ all: true });
+    try {
+      stubPublicApi({ pods: [communityPod({ tokenId: 1 })] }); // fixture has no description/media
+      await cmd.execute();
+      const out = JSON.parse(capturedJson!) as CommunityResult;
+      expect(out.pods[0]!.description).toBe('');
+      expect(out.pods[0]!.mediaUrl).toBeUndefined();
     } finally {
       restoreEnv();
     }
