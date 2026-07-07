@@ -9,24 +9,40 @@ const SPENDER = '0x2222222222222222222222222222222222222222';
 const APPROVE_TX = '0xabc0000000000000000000000000000000000000000000000000000000000001';
 
 // Builds a Clients-shaped mock. `allowance` seeds the on-chain allowance read;
-// `receiptStatus` controls the approve receipt.
+// `receiptStatus` controls the approve receipt. After the approve tx is sent, the
+// allowance read flips to maxUint256 (the approval propagating) — except for the
+// first `staleReads` post-approve reads, which simulate a lagging replica that
+// hasn't applied the approve yet (issue #55).
 function makeClients(opts: {
   allowance: bigint;
   receiptStatus?: 'success' | 'reverted';
+  staleReads?: number;
 }): { clients: Clients; writeContract: ReturnType<typeof vi.fn> } {
-  const writeContract = vi.fn(() => Promise.resolve(APPROVE_TX));
+  let approved = false;
+  let stale = opts.staleReads ?? 0;
+  const writeContract = vi.fn(() => { approved = true; return Promise.resolve(APPROVE_TX); });
   const clients = {
     network: 'testnet',
     account: { address: ACCOUNT },
     publicClient: {
-      readContract: vi.fn(({ functionName }: { functionName: string }) =>
-        Promise.resolve(functionName === 'allowance' ? opts.allowance : undefined)),
+      readContract: vi.fn(({ functionName }: { functionName: string }) => {
+        if (functionName !== 'allowance') return Promise.resolve(undefined);
+        if (!approved) return Promise.resolve(opts.allowance);
+        if (stale > 0) { stale--; return Promise.resolve(opts.allowance); } // lagging replica
+        return Promise.resolve(maxUint256);
+      }),
       getTransactionCount: vi.fn(() => Promise.resolve(7)),
       waitForTransactionReceipt: vi.fn(() => Promise.resolve({ status: opts.receiptStatus ?? 'success' })),
     },
     walletClient: { chain: {}, writeContract },
   } as unknown as Clients;
   return { clients, writeContract };
+}
+
+/** Instant sleeper for poll tests — counts calls instead of waiting wall-clock. */
+function fastSleep(): { fn: (ms: number) => Promise<void>; calls: () => number } {
+  let n = 0;
+  return { fn: () => { n++; return Promise.resolve(); }, calls: () => n };
 }
 
 describe('ensureAllowance', () => {
@@ -60,5 +76,31 @@ describe('ensureAllowance', () => {
     const { clients } = makeClients({ allowance: 0n, receiptStatus: 'reverted' });
     await expect(ensureAllowance(clients, TOKEN, SPENDER, 500n, 0n))
       .rejects.toMatchObject({ code: 'APPROVE_REVERTED' });
+  });
+
+  // ── post-approve visibility poll (issue #55: receipt ≠ read-path visibility) ──
+
+  it('does not sleep when the approval is visible on the first post-approve read', async () => {
+    const s = fastSleep();
+    const { clients } = makeClients({ allowance: 0n }); // visible immediately after approve
+    const res = await ensureAllowance(clients, TOKEN, SPENDER, 500n, 0n, s.fn);
+    expect(res.approved).toBe(true);
+    expect(s.calls()).toBe(0); // no lag → no waiting
+  });
+
+  it('polls through lagging replica reads until the approval is visible', async () => {
+    const s = fastSleep();
+    const { clients } = makeClients({ allowance: 0n, staleReads: 3 });
+    const res = await ensureAllowance(clients, TOKEN, SPENDER, 500n, 0n, s.fn);
+    expect(res.approved).toBe(true);
+    expect(s.calls()).toBe(3); // slept once per stale read, stopped when visible
+  });
+
+  it('gives up after the poll bound and still returns approved (spend may yet succeed)', async () => {
+    const s = fastSleep();
+    const { clients } = makeClients({ allowance: 0n, staleReads: 99 }); // never becomes visible
+    const res = await ensureAllowance(clients, TOKEN, SPENDER, 500n, 0n, s.fn);
+    expect(res).toEqual({ approved: true, approveTx: APPROVE_TX }); // falls through, no throw
+    expect(s.calls()).toBe(10); // bounded — ALLOWANCE_VISIBILITY_POLLS
   });
 });
