@@ -1,0 +1,103 @@
+name: Release
+
+# Every merge to main produces a release: npm publish + git tag + GitHub release.
+#
+# Version selection:
+#   - If the merged PR already bumped package.json (the pre-existing convention,
+#     e.g. "chore: bump version to 0.12.1"), that exact version is released.
+#   - Otherwise the workflow bumps a PATCH version itself and pushes the bump
+#     back to main as "chore(release): vX.Y.Z".
+#
+# Ordering is deliberate: publish FIRST, then push the bump/tag/release. If
+# publish fails (prepublishOnly runs lint + typecheck + test + build), nothing
+# lands in git — main never points at a version that failed its gate.
+#
+# publish.yaml (tag-triggered) stays as the manual fallback. Tags pushed by
+# this workflow use GITHUB_TOKEN, which does not trigger other workflows, so
+# the two paths never double-publish. npm also rejects duplicate versions.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      # The bump commit this workflow pushes re-triggers the workflow; that
+      # run must be a no-op or every release would cascade into the next.
+      - name: Skip self-triggered release commits
+        id: guard
+        run: |
+          if git log -1 --pretty=%s | grep -q '^chore(release):'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Determine version
+        if: steps.guard.outputs.skip == 'false'
+        id: version
+        run: |
+          set -euo pipefail
+          CURRENT=$(node -p "require('./package.json').version")
+          # Non-empty output = published. Exit-code checks are unreliable here:
+          # npm 10 (Node 20's npm) exits 0 with empty output for a missing version.
+          if [ -n "$(npm view "@reppo/cli@${CURRENT}" version 2>/dev/null || true)" ]; then
+            # Version already on npm — the merged PR did not bump. Auto-bump patch.
+            NEW=$(npm version patch --no-git-tag-version)
+            NEW=${NEW#v}
+            echo "bumped=true" >> "$GITHUB_OUTPUT"
+          else
+            NEW="$CURRENT"
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=${NEW}" >> "$GITHUB_OUTPUT"
+
+      - run: npm ci
+        if: steps.guard.outputs.skip == 'false'
+
+      # prepublishOnly gates this with lint + typecheck + test + build.
+      - name: Publish to npm
+        if: steps.guard.outputs.skip == 'false'
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Push bump commit, tag, and GitHub release
+        if: steps.guard.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          BUMPED: ${{ steps.version.outputs.bumped }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          if [ "$BUMPED" = "true" ]; then
+            git add package.json package-lock.json
+            git commit -m "chore(release): v${VERSION}"
+            # A merge may have landed on main while we published; rebase once.
+            git push origin main || { git pull --rebase origin main && git push origin main; }
+          fi
+          git tag "v${VERSION}"
+          git push origin "v${VERSION}"
+          gh release create "v${VERSION}" --generate-notes --title "v${VERSION}"
