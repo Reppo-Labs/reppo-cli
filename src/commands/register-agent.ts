@@ -1,7 +1,12 @@
 /**
- * `reppo register-agent --name <s> --description <s>` — register a new
- * agent identity on the Reppo platform. Returns a persistent agent
- * id + apiKey (Bearer token).
+ * `reppo register-agent --name <s> --description <s> [--is-orquestra]` —
+ * register a new agent identity on the Reppo platform. Returns a
+ * persistent agent id + apiKey (Bearer token).
+ *
+ * `--is-orquestra` marks the agent as an Orquestra swarm node. The platform
+ * then resolves ON-CHAIN pod ids on the agent-scoped endpoints — without it,
+ * POST /agents/[id]/pods/[POD_ID]/votes only accepts platform pod ids
+ * (pod_...), so on-chain vote registration fails with 404 "Pod not found".
  *
  * Endpoint: `POST https://reppo.ai/api/v1/agents/register` (no auth).
  * Spec: https://docs.reppo.ai/api/agent/custom-agents
@@ -55,11 +60,16 @@ export class RegisterAgentCommand extends BaseCommand {
         'reppo register-agent --name "MyBot" --description "Posts pod summaries to X"'],
       ['JSON output (capture credentials programmatically)',
         'reppo register-agent --name "MyBot" --description "..." --json'],
+      ['Register an Orquestra node agent (on-chain pod ids on /votes)',
+        'reppo register-agent --name "my-node" --description "Orquestra swarm node" --is-orquestra'],
     ],
   });
 
   agentName = Option.String('--name', { required: true, description: 'Display name for the agent' });
   description = Option.String('--description', { required: true, description: 'What the agent does' });
+  isOrquestra = Option.Boolean('--is-orquestra', false, {
+    description: 'Register as an Orquestra node agent — the platform then resolves on-chain pod ids on the agent endpoints (required for vote registration)',
+  });
 
   async execute(): Promise<number> {
     try {
@@ -79,7 +89,13 @@ export class RegisterAgentCommand extends BaseCommand {
         response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: trimmedName, description: trimmedDesc }),
+          // isOrquestra only when set — the platform defaults it to false, and
+          // omitting it keeps the body byte-identical for existing callers.
+          body: JSON.stringify({
+            name: trimmedName,
+            description: trimmedDesc,
+            ...(this.isOrquestra ? { isOrquestra: true } : {}),
+          }),
         });
       } catch (e) {
         // Network error (DNS, TLS, connection refused).
