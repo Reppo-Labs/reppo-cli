@@ -12,7 +12,7 @@
  * which bypasses clipanion's arg parser so option fields must be set by hand).
  */
 import { describe, it, expect } from 'vitest';
-import { MintPodCommand } from './mint-pod.js';
+import { MintPodCommand, publishingFeeFns } from './mint-pod.js';
 import type { Config } from '../config/load.js';
 
 interface PublishIntentShape {
@@ -173,5 +173,20 @@ describe('resolvePublishIntent — dataset modes', () => {
     }).resolvePublishIntent(cfg());
     expect(intent?.url).toBe('https://news.example/article')
     expect(intent?.imageUrl).toBe('https://news.example/og.jpg')
+  });
+});
+
+describe('publishingFeeFns (pre-mint auto-approve routing)', () => {
+  it('reppo → REPPO publishing fee, fee token pinned (no primary-token lookup)', () => {
+    expect(publishingFeeFns('reppo')).toEqual({
+      feeGetter: 'getPublishingFeeREPPO',
+      primaryFeeToken: false,
+    });
+  });
+  it('primary → primary-token publishing fee, resolved via getSubnetPrimaryToken', () => {
+    expect(publishingFeeFns('primary')).toEqual({
+      feeGetter: 'getPublishingFeePrimaryToken',
+      primaryFeeToken: true,
+    });
   });
 });
