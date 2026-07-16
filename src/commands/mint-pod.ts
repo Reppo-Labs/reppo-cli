@@ -7,10 +7,14 @@
  *
  * The pre-V2 mainnet path `mintPod(to, emissionSharePercent)` and the
  * `publishingFee()` getter are gone — fee logic moved to SubnetManager.
- * Fee/balance/allowance pre-flight is intentionally skipped here: the
- * contract reverts with structured errors (decoded via decodeRevert)
- * if balance/allowance/fee constraints are violated, and any client-
- * side estimate is duplicate logic that drifts.
+ * Fee/balance pre-flight is intentionally skipped here: the contract
+ * reverts with structured errors (decoded via decodeRevert) if balance/fee
+ * constraints are violated, and any client-side estimate is duplicate
+ * logic that drifts. The ALLOWANCE, however, is auto-approved before the
+ * mint (ensureAllowance, unlimited approve + receipt wait) — mint-pod was
+ * the one write command that didn't self-approve its spender like lock
+ * (veREPPO) and grant-access (SubnetManager) do, so every fresh wallet's
+ * first mint reverted InsufficientAllowance() until a manual approve.
  *
  * Pre-flight (both networks):
  *   - MISSING_DATANET / INVALID_DATANET_ID
@@ -27,6 +31,7 @@ import { BaseCommand } from './_base.js';
 import { cliError, emit } from '../output/format.js';
 import { createClients, nextNonce } from '../chain/clients.js';
 import { podManager, subnetManager, reppoToken } from '../chain/contracts.js';
+import { ensureAllowance } from '../chain/allowance.js';
 import { decodeRevert } from '../chain/errors.js';
 import { handleSubmittedCacheDecision } from './write-cache.js';
 import { waitForWriteReceipt, receiptGasEth, reppoFeeFromReceipt } from '../chain/receipt.js';
@@ -41,6 +46,18 @@ import {
 import type { Config } from '../config/load.js';
 
 const COMMAND = 'mint-pod';
+
+/** Maps the --token choice to the SubnetManager publishing-fee getter and whether the
+ *  fee token must be resolved via getSubnetPrimaryToken (mirrors grant-access's
+ *  accessFns). Used by the pre-mint auto-approve. */
+export function publishingFeeFns(token: 'reppo' | 'primary'): {
+  feeGetter: 'getPublishingFeeREPPO' | 'getPublishingFeePrimaryToken';
+  primaryFeeToken: boolean;
+} {
+  return token === 'reppo'
+    ? { feeGetter: 'getPublishingFeeREPPO', primaryFeeToken: false }
+    : { feeGetter: 'getPublishingFeePrimaryToken', primaryFeeToken: true };
+}
 
 /**
  * Resolved, fully-validated Phase-2 intent. Produced by
@@ -248,6 +265,25 @@ export class MintPodCommand extends BaseCommand {
             : { wouldPublish: false },
         });
         return 0;
+      }
+
+      // Auto-approve the PodManager to pull the publishing fee before minting (no-op
+      // when the allowance already covers it) — the same self-approve lock and
+      // grant-access do for their spenders. Skipped on --dry-run (a dry run must not
+      // send transactions; its simulate reports InsufficientAllowance instead).
+      // Outside the idempotency two-phase on purpose: approve() is self-idempotent
+      // via the allowance read, and waiting for its receipt advances the nonce.
+      const feeFns = publishingFeeFns(this.token);
+      const fee = (await clients.publicClient.readContract({
+        address: sm.address, abi: sm.abi, functionName: feeFns.feeGetter, args: [datanetId],
+      }));
+      if (fee > 0n) {
+        const feeTokenAddress = feeFns.primaryFeeToken
+          ? ((await clients.publicClient.readContract({
+              address: sm.address, abi: sm.abi, functionName: 'getSubnetPrimaryToken', args: [datanetId],
+            })))
+          : reppoToken(cfg.network).address;
+        await ensureAllowance(clients, feeTokenAddress, pm.address, fee);
       }
 
       if (this.idempotencyKey) await begin(this.idempotencyKey, COMMAND, args);
