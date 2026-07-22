@@ -22,7 +22,7 @@ import { privateKeyToAddress } from 'viem/accounts';
 import { BaseCommand } from '../_base.js';
 import { cliError, emit } from '../../output/format.js';
 import { createReadClient } from '../../chain/clients.js';
-import { trySubnetManager, tryVeReppo, erc20 } from '../../chain/contracts.js';
+import { trySubnetManager, tryVeReppo, tryPodManager, erc20 } from '../../chain/contracts.js';
 import { DEFAULT_PUBLIC_API_URL } from '../../api/public.js';
 import { fetchSubnetByTokenId, numericToString, type RawSubnet } from '../../api/subnets.js';
 
@@ -150,6 +150,11 @@ export class QueryDatanetCommand extends BaseCommand {
       let accessFeePrimaryToken: Numeric = unavailable('not read');
       let publishingFeePrimaryToken: Numeric = unavailable('not read');
       let primaryToken: { address: string; symbol: string; decimals: number } | undefined;
+      // Hoisted so the rewards-pool block below (which needs the same
+      // knowledge) doesn't have to re-derive it or re-read the chain.
+      // (`!primaryToken && !primaryIsZeroAddress` covers the metadata-read-
+      // failed case — no separate flag needed.)
+      let primaryIsZeroAddress = false;
       if (valid) {
         try {
           const primaryAddr = await client.readContract({
@@ -162,6 +167,7 @@ export class QueryDatanetCommand extends BaseCommand {
           // can tell "this datanet has no primary token" apart from a transport
           // error.
           if (BigInt(primaryAddr) === 0n) {
+            primaryIsZeroAddress = true;
             accessFeePrimaryToken = unavailable('datanet has no primary token');
             publishingFeePrimaryToken = unavailable('datanet has no primary token');
           } else {
@@ -191,6 +197,42 @@ export class QueryDatanetCommand extends BaseCommand {
         }
       }
 
+      // Remaining seeded rewards pool on PodManager — the depletable balance
+      // claims draw from. THE signal for "is this datanet still worth engaging":
+      // a datanet with a rate but an empty pool pays nothing (datanet 11 died
+      // this way). Best-effort like the fee reads: never break the fields above.
+      const pm = tryPodManager(cfg.network);
+      const podManagerReason = `PodManager address not configured for ${cfg.network}.`;
+      let rewardsPoolREPPO: Numeric = unavailable(podManagerReason);
+      let rewardsPoolPrimaryToken: Numeric = unavailable(podManagerReason);
+      if (pm && valid) {
+        const reppoPoolPromise = client.readContract({ ...pm, functionName: 'getSubnetReppoSeedings', args: [datanetId] })
+          .then((v) => ({ raw: v.toString(), formatted: formatUnits(v, 18) }))
+          .catch(() => unavailable('rewards pool read failed'));
+
+        if (primaryIsZeroAddress) {
+          // Same short-circuit discipline as the fee block above — REPPO-only
+          // datanets never touch the primary-pool RPC call at all.
+          rewardsPoolPrimaryToken = unavailable('datanet has no primary token');
+          rewardsPoolREPPO = await reppoPoolPromise;
+        } else if (!primaryToken) {
+          // Primary token's decimals are unknown (metadata read failed above)
+          // — never guess with an assumed 18 decimals, and don't bother
+          // issuing the RPC call just to discard the result.
+          rewardsPoolPrimaryToken = unavailable('primary token metadata unavailable');
+          rewardsPoolREPPO = await reppoPoolPromise;
+        } else {
+          // Both reads are independent — issue them concurrently.
+          const primaryPoolPromise = client.readContract({ ...pm, functionName: 'getSubnetPrimaryTokenSeedings', args: [datanetId] })
+            .then((v) => ({ raw: v.toString(), formatted: formatUnits(v, primaryToken.decimals) }))
+            .catch(() => unavailable('rewards pool read failed'));
+          [rewardsPoolREPPO, rewardsPoolPrimaryToken] = await Promise.all([reppoPoolPromise, primaryPoolPromise]);
+        }
+      } else if (!valid) {
+        rewardsPoolREPPO = unavailable('datanet does not exist');
+        rewardsPoolPrimaryToken = unavailable('datanet does not exist');
+      }
+
       // Optional caller-access check.
       const callerAddr = this.resolveCallerAddress(cfg.privateKey);
       const callerAccess = callerAddr && valid
@@ -211,6 +253,8 @@ export class QueryDatanetCommand extends BaseCommand {
         accessFeePrimaryToken,
         publishingFeeREPPO,
         publishingFeePrimaryToken,
+        rewardsPoolREPPO,
+        rewardsPoolPrimaryToken,
         ...(primaryToken ? { primaryToken } : {}),
         ...(callerAccess ? { callerAccess } : {}),
         metadata,
@@ -230,6 +274,7 @@ export class QueryDatanetCommand extends BaseCommand {
         `Current epoch: ${currentEpoch ?? '(unavailable)'}`,
         `Access fee:    ${feeFmt}`,
         `Publish fee:   ${pubFeeFmt}`,
+        `Rewards pool:  ${'formatted' in rewardsPoolREPPO ? `${rewardsPoolREPPO.formatted} REPPO` : `(unavailable: ${rewardsPoolREPPO.unavailable})`}`,
       ];
       // Primary-token fees — shown only when the datanet actually has a
       // primary token (primaryToken present implies the fees are numeric).
@@ -242,6 +287,11 @@ export class QueryDatanetCommand extends BaseCommand {
       if (primaryToken && 'formatted' in publishingFeePrimaryToken) {
         lines.push(
           `Publish fee (primary): ${publishingFeePrimaryToken.formatted} ${primaryToken.symbol} per mint`,
+        );
+      }
+      if (primaryToken && 'formatted' in rewardsPoolPrimaryToken) {
+        lines.push(
+          `Rewards pool (primary): ${rewardsPoolPrimaryToken.formatted} ${primaryToken.symbol}`,
         );
       }
       if (callerAccess) {

@@ -20,6 +20,11 @@ let primaryTokenAddr = NON_ZERO_PRIMARY;
 // .catch degradation paths are unreachable with an always-succeeding mock.
 let pubFeeREPPOFails = false;
 let pubFeePrimaryFails = false;
+// Per-test failure knobs for the best-effort rewards-pool reads — mirrors
+// the pubFee* knobs above so we can prove the two pool fields degrade
+// independently of each other.
+let poolREPPOFails = false;
+let poolPrimaryFails = false;
 
 // Deterministic chain reads — dispatch on the function name the command calls.
 vi.mock('../../chain/clients.js', () => ({
@@ -39,6 +44,12 @@ vi.mock('../../chain/clients.js', () => ({
       }
       if (functionName === 'decimals') return Promise.resolve(18);
       if (functionName === 'symbol') return Promise.resolve('EXY');
+      if (functionName === 'getSubnetReppoSeedings') {
+        return poolREPPOFails ? Promise.reject(new Error('revert')) : Promise.resolve(2_780n * 10n ** 18n);
+      }
+      if (functionName === 'getSubnetPrimaryTokenSeedings') {
+        return poolPrimaryFails ? Promise.reject(new Error('revert')) : Promise.resolve(0n);
+      }
       return Promise.resolve(undefined);
     },
   })),
@@ -130,6 +141,8 @@ interface Result {
   accessFeePrimaryToken: { formatted?: string } | { unavailable: string };
   publishingFeeREPPO: { formatted?: string } | { unavailable: string };
   publishingFeePrimaryToken: { formatted?: string } | { unavailable: string };
+  rewardsPoolREPPO: { raw?: string; formatted?: string } | { unavailable: string };
+  rewardsPoolPrimaryToken: { raw?: string; formatted?: string } | { unavailable: string };
   primaryToken?: { address: string; symbol: string; decimals: number };
   metadata: Record<string, unknown>;
 }
@@ -139,6 +152,8 @@ beforeEach(() => {
   primaryTokenAddr = NON_ZERO_PRIMARY;
   pubFeeREPPOFails = false;
   pubFeePrimaryFails = false;
+  poolREPPOFails = false;
+  poolPrimaryFails = false;
   delete process.env.REPPO_NETWORK;
   delete process.env.REPPO_PRIVATE_KEY;
   delete process.env.REPPO_PUBLIC_API_URL;
@@ -238,6 +253,63 @@ describe('query datanet — metadata enrichment', () => {
     expect('formatted' in out.accessFeePrimaryToken ? out.accessFeePrimaryToken.formatted : null).toBe('25');
     expect('unavailable' in out.publishingFeePrimaryToken ? out.publishingFeePrimaryToken.unavailable : null)
       .toBe('publishing fee read failed');
+  });
+
+  it('surfaces the remaining rewards pool (REPPO + primary) from PodManager', async () => {
+    vi.stubGlobal('fetch', vi.fn(() =>
+      Promise.resolve(jsonResponse({ data: { subnets: [FULL_ROW] } })),
+    ));
+
+    const r = await run(makeCmd('9'));
+    expect(r.exitCode).toBe(0);
+    const out = JSON.parse(r.stdout) as Result;
+    expect(out.rewardsPoolREPPO).toEqual({ raw: (2_780n * 10n ** 18n).toString(), formatted: '2780' });
+    expect(out.rewardsPoolPrimaryToken).toEqual({ raw: '0', formatted: '0' });
+  });
+
+  it('degrades the REPPO rewards pool to { unavailable } on a read revert — primary pool intact', async () => {
+    poolREPPOFails = true;
+    vi.stubGlobal('fetch', vi.fn(() =>
+      Promise.resolve(jsonResponse({ data: { subnets: [FULL_ROW] } })),
+    ));
+
+    const r = await run(makeCmd('9'));
+    expect(r.exitCode).toBe(0);
+    const out = JSON.parse(r.stdout) as Result;
+    // Best-effort contract: the failed REPPO-pool read never breaks the
+    // primary-pool answer (independent reads, independent failures).
+    expect('unavailable' in out.rewardsPoolREPPO ? out.rewardsPoolREPPO.unavailable : null)
+      .toBe('rewards pool read failed');
+    expect(out.rewardsPoolPrimaryToken).toEqual({ raw: '0', formatted: '0' });
+  });
+
+  it('degrades the primary rewards pool to { unavailable } on a read revert — REPPO pool intact', async () => {
+    poolPrimaryFails = true;
+    vi.stubGlobal('fetch', vi.fn(() =>
+      Promise.resolve(jsonResponse({ data: { subnets: [FULL_ROW] } })),
+    ));
+
+    const r = await run(makeCmd('9'));
+    expect(r.exitCode).toBe(0);
+    const out = JSON.parse(r.stdout) as Result;
+    expect(out.rewardsPoolREPPO).toEqual({ raw: (2_780n * 10n ** 18n).toString(), formatted: '2780' });
+    expect('unavailable' in out.rewardsPoolPrimaryToken ? out.rewardsPoolPrimaryToken.unavailable : null)
+      .toBe('rewards pool read failed');
+  });
+
+  it('reports the primary rewards pool as no-primary-token (and skips its RPC call) for REPPO-only datanets', async () => {
+    primaryTokenAddr = ZERO_ADDRESS;
+    poolPrimaryFails = true; // proves the RPC call is never issued: if it were, this would flip the result to a read failure
+    vi.stubGlobal('fetch', vi.fn(() =>
+      Promise.resolve(jsonResponse({ data: { subnets: [FULL_ROW] } })),
+    ));
+
+    const r = await run(makeCmd('9'));
+    expect(r.exitCode).toBe(0);
+    const out = JSON.parse(r.stdout) as Result;
+    expect(out.rewardsPoolREPPO).toEqual({ raw: (2_780n * 10n ** 18n).toString(), formatted: '2780' });
+    expect('unavailable' in out.rewardsPoolPrimaryToken ? out.rewardsPoolPrimaryToken.unavailable : null)
+      .toBe('datanet has no primary token');
   });
 
   it('degrades to { unavailable } when the datanet is absent from the catalog', async () => {
