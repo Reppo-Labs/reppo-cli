@@ -39,6 +39,8 @@ vi.mock('../../chain/clients.js', () => ({
       }
       if (functionName === 'decimals') return Promise.resolve(18);
       if (functionName === 'symbol') return Promise.resolve('EXY');
+      if (functionName === 'getSubnetReppoSeedings') return Promise.resolve(2_780n * 10n ** 18n);
+      if (functionName === 'getSubnetPrimaryTokenSeedings') return Promise.resolve(0n);
       return Promise.resolve(undefined);
     },
   })),
@@ -130,6 +132,8 @@ interface Result {
   accessFeePrimaryToken: { formatted?: string } | { unavailable: string };
   publishingFeeREPPO: { formatted?: string } | { unavailable: string };
   publishingFeePrimaryToken: { formatted?: string } | { unavailable: string };
+  rewardsPoolREPPO: { raw?: string; formatted?: string } | { unavailable: string };
+  rewardsPoolPrimaryToken: { raw?: string; formatted?: string } | { unavailable: string };
   primaryToken?: { address: string; symbol: string; decimals: number };
   metadata: Record<string, unknown>;
 }
@@ -238,6 +242,18 @@ describe('query datanet — metadata enrichment', () => {
     expect('formatted' in out.accessFeePrimaryToken ? out.accessFeePrimaryToken.formatted : null).toBe('25');
     expect('unavailable' in out.publishingFeePrimaryToken ? out.publishingFeePrimaryToken.unavailable : null)
       .toBe('publishing fee read failed');
+  });
+
+  it('surfaces the remaining rewards pool (REPPO + primary) from PodManager', async () => {
+    vi.stubGlobal('fetch', vi.fn(() =>
+      Promise.resolve(jsonResponse({ data: { subnets: [FULL_ROW] } })),
+    ));
+
+    const r = await run(makeCmd('9'));
+    expect(r.exitCode).toBe(0);
+    const out = JSON.parse(r.stdout) as Result;
+    expect(out.rewardsPoolREPPO).toEqual({ raw: (2_780n * 10n ** 18n).toString(), formatted: '2780' });
+    expect(out.rewardsPoolPrimaryToken).toEqual({ raw: '0', formatted: '0' });
   });
 
   it('degrades to { unavailable } when the datanet is absent from the catalog', async () => {

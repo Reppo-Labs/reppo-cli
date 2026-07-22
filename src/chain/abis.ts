@@ -32,6 +32,10 @@ export const POD_MANAGER_ABI = parseAbi([
   // derives CLAIMABILITY from these: voted > 0 && !hasUserClaimedEmissions.
   'function getVotersUpVotesForPodInEpoch(uint256 epoch, uint256 podId, address voter) view returns (uint256)',
   'function getVotersDownVotesForPodInEpoch(uint256 epoch, uint256 podId, address voter) view returns (uint256)',
+  // Remaining seeded emission funding per subnet (the depletable rewards pool —
+  // decremented by every owner/voter claim; verified on impl 0x474d4f03…).
+  'function getSubnetReppoSeedings(uint256 subnetId) view returns (uint256)',
+  'function getSubnetPrimaryTokenSeedings(uint256 subnetId) view returns (uint256)',
   'function hasPodOwnerClaimedEmissions(uint256 epoch, uint256 podId) view returns (bool)',
   'function hasUserClaimedEmissions(uint256 epoch, uint256 podId, address user) view returns (bool)',
   'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)',
