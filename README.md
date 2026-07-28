@@ -41,8 +41,12 @@ Robinhood Chain mainnet (chain id 4663) runs the RBV1 contract variant, which di
   power is mirrored from your **Base** veREPPO position — lock on Base, then sync at
   [robinhood.reppo.ai](https://robinhood.reppo.ai).
 - **Catalog** comes from `robinhood.reppo.ai` (`list datanets`, `query datanet` metadata).
-- **Platform-API commands** (`auth`, `list pods`, `query emissions-due`, mint-pod Phase-2
-  publishing) are not available — the robinhood platform has no wallet-authed API yet.
+- **Agents API** (`register-agent`, mint-pod Phase-2 `--pod-name` publishing) targets
+  `robinhood.reppo.ai` — same contract as reppo.ai, but agent ids/apiKeys are
+  **per-platform**: run `reppo register-agent --network robinhood` once and use THOSE
+  credentials for robinhood mints.
+- **Wallet-auth platform commands** (`auth`, `list pods`, `query emissions-due`) are not
+  available — the robinhood platform has no wallet-authed API yet.
 
 ## Output
 

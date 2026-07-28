@@ -32,13 +32,9 @@
 import { Option } from 'clipanion';
 import { BaseCommand } from './_base.js';
 import { cliError, emit } from '../output/format.js';
+import { agentsApiBase } from '../api/agents.js';
 
 const COMMAND = 'register-agent';
-
-// Hardcoded — the agents API lives at reppo.ai/api/v1, separate host from
-// REPPO_API_URL (which points at api.reppo.xyz for wallet-auth-based calls).
-// If/when those unify, replace with cfg.apiUrl + a path constant.
-const AGENTS_API_BASE = 'https://reppo.ai/api/v1';
 
 interface RegisterResponse {
   data?: {
@@ -82,7 +78,10 @@ export class RegisterAgentCommand extends BaseCommand {
         throw cliError('INVALID_DESCRIPTION', '--description must not be empty.');
       }
 
-      const url = `${AGENTS_API_BASE}/agents/register`;
+      // Per-network platform: robinhood agents register on robinhood.reppo.ai
+      // (agent ids/apiKeys are per-platform). This command doesn't loadConfig —
+      // it reads flags/env directly — so mirror BaseCommand's network precedence.
+      const url = `${agentsApiBase(this.network ?? process.env.REPPO_NETWORK)}/agents/register`;
 
       let response: Response;
       try {
