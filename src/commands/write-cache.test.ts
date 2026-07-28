@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { PublicClient, TransactionReceipt } from 'viem';
 import { begin, markSubmitted, getIdempotent } from '../state/idempotency.js';
-import { reconcileSubmittedCache } from './write-cache.js';
+import { reconcileSubmittedCache, basescanTxUrl } from './write-cache.js';
 
 const tmpRoot = mkdtempSync(join(tmpdir(), 'reppo-reconcile-'));
 let stateFile = '';
@@ -16,6 +16,14 @@ beforeEach(() => {
 
 afterAll(() => {
   rmSync(tmpRoot, { recursive: true, force: true });
+});
+
+describe('basescanTxUrl', () => {
+  it('maps each network to its explorer', () => {
+    expect(basescanTxUrl('mainnet', '0xabc')).toBe('https://basescan.org/tx/0xabc');
+    expect(basescanTxUrl('testnet', '0xabc')).toBe('https://sepolia.basescan.org/tx/0xabc');
+    expect(basescanTxUrl('robinhood', '0xabc')).toBe('https://explorer.mainnet.chain.robinhood.com/tx/0xabc');
+  });
 });
 
 describe('reconcileSubmittedCache', () => {

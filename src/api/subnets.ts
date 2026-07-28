@@ -30,6 +30,11 @@ export interface RawSubnet {
   accessFeeREPPO?: number | string;
   emissionsPerEpochREPPO?: number | string;
   emissionsPerEpochPrimaryToken?: number | string;
+  // Robinhood catalog variants: RBV1 datanets charge a single fee / emit a
+  // single emission stream in the subnet's own token, so robinhood.reppo.ai
+  // serves `accessFee` / `emissionsPerEpoch` instead of the *REPPO fields.
+  accessFee?: number | string;
+  emissionsPerEpoch?: number | string;
   status?: string;
   upVoteVolume?: number | string;
   downVoteVolume?: number | string;

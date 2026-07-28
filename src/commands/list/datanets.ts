@@ -20,7 +20,7 @@
 import { Option } from 'clipanion';
 import { BaseCommand } from '../_base.js';
 import { cliError, emit } from '../../output/format.js';
-import { DEFAULT_PUBLIC_API_URL } from '../../api/public.js';
+import { defaultPublicApiUrl } from '../../api/public.js';
 import { fetchSubnets, numericToString, type RawSubnet } from '../../api/subnets.js';
 
 interface DatanetRow {
@@ -98,7 +98,7 @@ export class ListDatanetsCommand extends BaseCommand {
       }
 
       // Resolve env override at call site (per spec — not in loadConfig).
-      const baseUrl = process.env.REPPO_PUBLIC_API_URL ?? DEFAULT_PUBLIC_API_URL;
+      const baseUrl = process.env.REPPO_PUBLIC_API_URL ?? defaultPublicApiUrl(cfg.network);
 
       const raw = await fetchSubnets(baseUrl);
 
@@ -129,7 +129,7 @@ export class ListDatanetsCommand extends BaseCommand {
         lines.push('(no datanets matched)');
       } else {
         for (const d of datanets) {
-          lines.push(`  #${d.id.padEnd(4)} ${d.name}  [${d.status}]  fee=${d.accessFeeREPPO} REPPO  token=${d.nativeToken.symbol}`);
+          lines.push(`  #${d.id.padEnd(4)} ${d.name}  [${d.status}]  fee=${d.accessFeeREPPO} ${cfg.network === 'robinhood' ? d.nativeToken.symbol || 'subnet-token' : 'REPPO'}  token=${d.nativeToken.symbol}`);
         }
       }
 
@@ -150,8 +150,12 @@ function toRow(s: RawSubnet): DatanetRow {
     id: s.tokenId ?? '',
     name: s.subnetName ?? '',
     status: s.status ?? 'UNKNOWN',
-    accessFeeREPPO: numericToString(s.accessFeeREPPO),
-    emissionsPerEpochREPPO: numericToString(s.emissionsPerEpochREPPO),
+    // Robinhood rows carry single-token `accessFee`/`emissionsPerEpoch`
+    // (denominated in the subnet token, not REPPO) — fall back to them so
+    // robinhood datanets don't all render fee=0. Field names stay for
+    // output-contract compatibility.
+    accessFeeREPPO: numericToString(s.accessFeeREPPO ?? s.accessFee),
+    emissionsPerEpochREPPO: numericToString(s.emissionsPerEpochREPPO ?? s.emissionsPerEpoch),
     nativeToken: {
       address: s.nativeTokenAddress ?? '',
       symbol: s.nativeTokenSymbol ?? '',

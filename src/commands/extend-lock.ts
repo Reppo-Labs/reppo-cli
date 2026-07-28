@@ -20,7 +20,7 @@ import { cliError, emit } from '../output/format.js';
 import { createClients, nextNonce } from '../chain/clients.js';
 import { veReppo } from '../chain/contracts.js';
 import { decodeRevert } from '../chain/errors.js';
-import { handleSubmittedCacheDecision } from './write-cache.js';
+import { handleSubmittedCacheDecision, basescanTxUrl } from './write-cache.js';
 import { waitForWriteReceipt, receiptGasEth } from '../chain/receipt.js';
 import { begin, markSubmitted, markConfirmed, markFailed, peekIdempotent } from '../state/idempotency.js';
 
@@ -49,6 +49,7 @@ export class ExtendLockCommand extends BaseCommand {
   async execute(): Promise<number> {
     try {
       const cfg = this.loadConfig();
+      this.requireStakingNetwork(cfg.network);
       const pk = cfg.privateKey;
       if (!pk) {
         throw cliError(
@@ -236,9 +237,7 @@ export class ExtendLockCommand extends BaseCommand {
         txHash: tx,
         gasEth: receiptGasEth(receipt),
         block: receipt.blockNumber.toString(),
-        basescanUrl: cfg.network === 'mainnet'
-          ? `https://basescan.org/tx/${tx}`
-          : `https://sepolia.basescan.org/tx/${tx}`,
+        basescanUrl: basescanTxUrl(cfg.network, tx),
         lockupBefore: {
           amount: lockupBefore[0].toString(),
           expiresAt: lockupBefore[1].toString(),

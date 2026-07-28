@@ -40,6 +40,7 @@ import {
 } from '../chain/contracts.js';
 import { decodeRevert } from '../chain/errors.js';
 import { receiptGasEth } from '../chain/receipt.js';
+import { basescanTxUrl } from './write-cache.js';
 import {
   begin,
   markSubmitted,
@@ -296,9 +297,7 @@ export class ApproveCommand extends BaseCommand {
         requested: fmtAmt(amount),
         previousAllowance: fmtAmt(currentAllowance),
         block: receipt.blockNumber.toString(),
-        basescanUrl: cfg.network === 'mainnet'
-          ? `https://basescan.org/tx/${tx}`
-          : `https://sepolia.basescan.org/tx/${tx}`,
+        basescanUrl: basescanTxUrl(cfg.network, tx),
       };
       if (this.idempotencyKey) await markConfirmed(this.idempotencyKey, COMMAND, args, result, tx);
 

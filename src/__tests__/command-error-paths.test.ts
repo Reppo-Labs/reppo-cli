@@ -119,6 +119,14 @@ describe('lock', () => {
     expect(r.exitCode).not.toBe(0);
     expect(parseError(r.stderr).code).toBe('MISSING_PRIVATE_KEY');
   });
+
+  it('rejects robinhood with UNSUPPORTED_ON_NETWORK (RBV1 has no staking)', async () => {
+    const r = await runCli(['lock', '1000', '--duration', '7200', ...JSON_FLAG], { REPPO_PRIVATE_KEY: FAKE_PK, REPPO_NETWORK: 'robinhood' });
+    expect(r.exitCode).not.toBe(0);
+    const err = parseError(r.stderr);
+    expect(err.code).toBe('UNSUPPORTED_ON_NETWORK');
+    expect(err.hint).toMatch(/Base/);
+  });
 });
 
 // `unlock` tests are added when PR #23 merges — the command isn't on main yet.

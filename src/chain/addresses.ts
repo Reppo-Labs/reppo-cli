@@ -9,7 +9,7 @@
 import type { Address } from 'viem';
 import { cliError } from '../output/format.js';
 
-export type Network = 'mainnet' | 'testnet';
+export type Network = 'mainnet' | 'testnet' | 'robinhood';
 
 export interface AddressBundle {
   podManager: Address;
@@ -46,8 +46,29 @@ const TESTNET: AddressBundle = {
   chainId: 84532,
 };
 
+// Robinhood Chain mainnet (4663) runs the RBV1 contract variant: fees are paid
+// in each subnet's own ERC-20 (no REPPO/USDC on this chain), voting power is
+// mirrored from Base veREPPO by robinhood.reppo.ai (no on-chain staking).
+// Addresses from robinhood.reppo.ai production config, 2026-07-27.
+const ROBINHOOD: AddressBundle = {
+  podManager:    '0xeAd1A577B02829b7F634aD7eE30Fbbc2CDF7e478', // PodManagerRBV1
+  subnetManager: '0xDAd72306b2ee410B20795D353cF7913AA7Eb15aa', // SubnetManagerRBV1
+  reppoToken:    TBD, // no REPPO token on Robinhood Chain
+  veReppo:       '0x15949C1727076a546eB055e9AB9E5bD32f069Db2', // VeReppoRBV1 (read-only mirror, no staking)
+  usdc:          TBD, // no USDC on Robinhood Chain
+  uniswapRouter: null,
+  uniswapQuoter: null,
+  chainId: 4663,
+};
+
+const BUNDLES: Record<Network, AddressBundle> = {
+  mainnet: MAINNET,
+  testnet: TESTNET,
+  robinhood: ROBINHOOD,
+};
+
 export function getAddresses(network: Network): AddressBundle {
-  return network === 'mainnet' ? MAINNET : TESTNET;
+  return BUNDLES[network];
 }
 
 /**

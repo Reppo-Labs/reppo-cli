@@ -85,11 +85,11 @@ export function loadConfig(overrides: { network?: Network } = {}): Config {
     home.network ??
     'mainnet';
 
-  if (networkRaw !== 'mainnet' && networkRaw !== 'testnet') {
+  if (networkRaw !== 'mainnet' && networkRaw !== 'testnet' && networkRaw !== 'robinhood') {
     throw cliError(
       'INVALID_NETWORK',
-      `Invalid network "${networkRaw}" — must be "mainnet" or "testnet".`,
-      'Set REPPO_NETWORK=mainnet (default) or REPPO_NETWORK=testnet, or pass --network <name>.',
+      `Invalid network "${networkRaw}" — must be "mainnet", "testnet", or "robinhood".`,
+      'Set REPPO_NETWORK=mainnet (default), testnet, or robinhood — or pass --network <name>.',
     );
   }
   const network: Network = networkRaw;

@@ -16,6 +16,7 @@
 import {
   createPublicClient,
   createWalletClient,
+  defineChain,
   http,
   type Address,
   type Chain,
@@ -29,6 +30,25 @@ import type { Network } from './addresses.js';
 // errors when we try to declare ReadClient/SignerClient aliases.
 const base = _base as Chain;
 const baseSepolia = _baseSepolia as Chain;
+
+// Robinhood Chain mainnet (Arbitrum Orbit). Defined locally because the
+// pinned viem release has no chain-4663 definition; chain id verified via
+// eth_chainId against the RPC below (0x1237 = 4663).
+const robinhood = defineChain({
+  id: 4663,
+  name: 'Robinhood Chain',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  rpcUrls: { default: { http: ['https://rpc.mainnet.chain.robinhood.com'] } },
+  blockExplorers: {
+    default: { name: 'Robinhood Explorer', url: 'https://explorer.mainnet.chain.robinhood.com' },
+  },
+}) as Chain;
+
+const CHAINS: Record<Network, Chain> = {
+  mainnet: base,
+  testnet: baseSepolia,
+  robinhood,
+};
 
 export type ReadClient = ReturnType<typeof createPublicClient>;
 export type SignerClient = ReturnType<typeof createWalletClient>;
@@ -46,7 +66,7 @@ export function createClients(opts: {
   rpcUrl?: string;
 }): Clients {
   const account = privateKeyToAccount(opts.privateKey);
-  const chain = opts.network === 'mainnet' ? base : baseSepolia;
+  const chain = CHAINS[opts.network];
   const transport = http(opts.rpcUrl);
   const publicClient = createPublicClient({ chain, transport });
   const walletClient = createWalletClient({ account, chain, transport });
@@ -58,8 +78,7 @@ export function createClients(opts: {
  * commands that don't need a wallet.
  */
 export function createReadClient(opts: { network: Network; rpcUrl?: string }): ReadClient {
-  const chain = opts.network === 'mainnet' ? base : baseSepolia;
-  return createPublicClient({ chain, transport: http(opts.rpcUrl) });
+  return createPublicClient({ chain: CHAINS[opts.network], transport: http(opts.rpcUrl) });
 }
 
 /**
