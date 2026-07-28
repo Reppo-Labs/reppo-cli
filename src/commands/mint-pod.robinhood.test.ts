@@ -88,14 +88,24 @@ describe('mint-pod — robinhood (RBV1) branch', () => {
     expect(await captureErrorCode(makeCmd({ token: 'primary' }))).toBe('INVALID_TOKEN');
   });
 
-  it('rejects Phase-2 publishing with UNSUPPORTED_ON_NETWORK (no robinhood metadata API)', async () => {
+  it('accepts Phase-2 publishing on robinhood (posts to robinhood.reppo.ai)', async () => {
     const cmd = makeCmd({
       podName: 'My Pod', subnetUuid: 'cms127jgm0001l204knjvwh5q', agreeToTerms: true,
     });
     process.env.REPPO_AGENT_ID = 'agent-1';
     process.env.REPPO_AGENT_API_KEY = 'key-1';
+    const out: string[] = [];
+    vi.spyOn(process.stdout, 'write').mockImplementation((c: string | Uint8Array) => {
+      out.push(c.toString());
+      return true;
+    });
     try {
-      expect(await captureErrorCode(cmd)).toBe('UNSUPPORTED_ON_NETWORK');
+      const code = await cmd.execute();
+      expect(code).toBe(0)
+      const line = out.join('').trim().split('\n').filter((l) => l.startsWith('{')).pop();
+      const result = JSON.parse(line ?? '{}') as { metadata?: { wouldPublish?: boolean } };
+      // dry-run previews Phase 2 instead of erroring UNSUPPORTED_ON_NETWORK
+      expect(result.metadata?.wouldPublish).toBe(true);
     } finally {
       delete process.env.REPPO_AGENT_ID;
       delete process.env.REPPO_AGENT_API_KEY;

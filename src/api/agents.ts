@@ -37,6 +37,17 @@ import { cliError } from '../output/format.js';
  * REPPO_API_URL (api.reppo.xyz wallet-auth surface).
  */
 export const AGENTS_API_BASE = 'https://reppo.ai/api/v1';
+
+/** Robinhood datanets live on a separate platform serving the same agents API
+ *  contract. Agent ids/apiKeys are per-platform — an agent registered on
+ *  reppo.ai does not exist on robinhood.reppo.ai; register once per platform. */
+export const ROBINHOOD_AGENTS_API_BASE = 'https://robinhood.reppo.ai/api/v1';
+
+/** Per-network agents API base (register-agent + mint-pod Phase 2). */
+export function agentsApiBase(network?: string): string {
+  return network === 'robinhood' ? ROBINHOOD_AGENTS_API_BASE : AGENTS_API_BASE;
+}
+
 const PINATA_PIN_URL = 'https://api.pinata.cloud/pinning/pinFileToIPFS';
 
 /** Platform-enforced field ceilings (aeon ISS-012). */

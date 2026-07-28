@@ -37,6 +37,7 @@ import { handleSubmittedCacheDecision, basescanTxUrl } from './write-cache.js';
 import { waitForWriteReceipt, receiptGasEth, reppoFeeFromReceipt, tokenFeeFromReceipt } from '../chain/receipt.js';
 import { begin, markSubmitted, markConfirmed, markFailed, peekIdempotent } from '../state/idempotency.js';
 import {
+  agentsApiBase,
   pinDatasetToIpfs,
   registerPodMetadata,
   POD_NAME_MAX,
@@ -179,17 +180,10 @@ export class MintPodCommand extends BaseCommand {
       // fast instead of after an irreversible mint. Returns null when
       // --pod-name is absent (publishing is opt-in).
       const publish = this.resolvePublishIntent(cfg);
-      // Phase-2 metadata registration posts to the reppo.ai platform, which
-      // does not know robinhood subnets (robinhood.reppo.ai is a separate,
-      // Privy-authed platform with no agent metadata API yet). Fail fast
-      // rather than registering metadata against the wrong platform.
-      if (isRbNetwork && publish) {
-        throw cliError(
-          'UNSUPPORTED_ON_NETWORK',
-          'Pod metadata publishing (--pod-name) is not available on robinhood yet.',
-          'Mint without --pod-name; robinhood pods get metadata via robinhood.reppo.ai once its API supports agents.',
-        );
-      }
+      // Phase-2 posts to the network's own platform: reppo.ai for Base,
+      // robinhood.reppo.ai for robinhood (same contract; agent ids/apiKeys are
+      // per-platform — REPPO_AGENT_ID must be an agent registered THERE).
+      const phase2ApiBase = agentsApiBase(cfg.network);
 
       const clients = createClients({
         network: cfg.network,
@@ -217,7 +211,7 @@ export class MintPodCommand extends BaseCommand {
         const lines = [`(cached, confirmed) tx: ${cachedTx ?? 'n/a'}`];
         const payload: Record<string, unknown> = { ...decision.result, idempotent: true, status: 'confirmed' };
         if (publish && cachedTx) {
-          const metadata = await this.runPhase2(publish, cachedTx as `0x${string}`);
+          const metadata = await this.runPhase2(publish, cachedTx as `0x${string}`, phase2ApiBase);
           payload.metadata = metadata;
           lines.push(...this.phase2HumanLines(publish, metadata));
         }
@@ -417,7 +411,7 @@ export class MintPodCommand extends BaseCommand {
       // (the return-confirmed branch above re-runs Phase 2 against the
       // cached txHash).
       if (publish) {
-        const metadata = await this.runPhase2(publish, tx);
+        const metadata = await this.runPhase2(publish, tx, phase2ApiBase);
         result.metadata = metadata;
         humanLines.push(...this.phase2HumanLines(publish, metadata));
       }
@@ -558,7 +552,7 @@ export class MintPodCommand extends BaseCommand {
    * the command after a durable on-chain mint. `published` is true only on a
    * 2xx registration response.
    */
-  private async runPhase2(intent: PublishIntent, txHash: `0x${string}`): Promise<Phase2Result> {
+  private async runPhase2(intent: PublishIntent, txHash: `0x${string}`, apiBase: string): Promise<Phase2Result> {
     let datasetUri = '';
     try {
       if (intent.dataset.kind === 'pin') {
@@ -596,7 +590,7 @@ export class MintPodCommand extends BaseCommand {
 
     const datasetField = datasetUri ? { datasetUri } : {};
     try {
-      const res = await registerPodMetadata(intent.agentId, intent.agentApiKey, body);
+      const res = await registerPodMetadata(intent.agentId, intent.agentApiKey, body, apiBase);
       if (res.ok) {
         return { published: true, stage: 'register', httpStatus: res.status, ...datasetField };
       }
