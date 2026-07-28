@@ -19,7 +19,7 @@ interface DecodedError {
 const SELECTORS: Record<string, DecodedError> = {
   '0xcabeb655': {
     code: 'INSUFFICIENT_VOTING_POWER',
-    hint: 'Lock REPPO into veReppo first: `reppo lock <amount> --duration <seconds>` (see `reppo lock --help` for the network-specific minimum).',
+    hint: 'Lock REPPO into veReppo first: `reppo lock <amount> --duration <seconds>` (see `reppo lock --help` for the network-specific minimum). On robinhood there is no staking — lock on Base, then sync voting power at https://robinhood.reppo.ai.',
   },
   '0x5bdedc41': {
     code: 'PUBLISHER_LACKS_SUBNET_ACCESS',
@@ -56,6 +56,13 @@ const SELECTORS: Record<string, DecodedError> = {
   '0x82b42900': {
     code: 'UNAUTHORIZED',
     hint: 'Caller is not authorized for this action.',
+  },
+  // SubnetAccessAlreadyGranted() — RBV1 accessSubnet reverts with this when the
+  // target already has access. grant-access pre-checks hasSubnetAccess, so this
+  // only surfaces on a race; same code as the pre-check for consumer stability.
+  '0x6dd0f200': {
+    code: 'ACCESS_ALREADY_GRANTED',
+    hint: 'The address already has access to this datanet — nothing to do.',
   },
   '0xfb8f41b2': {
     code: 'INSUFFICIENT_ALLOWANCE',

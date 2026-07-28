@@ -98,6 +98,19 @@ describe('loadConfig — network precedence', () => {
     expect(loadConfig({ network: 'mainnet' }).network).toBe('mainnet');
   });
 
+  it('accepts robinhood from env', () => {
+    const { cwd, home } = freshTmp();
+    pointAt(cwd, home);
+    process.env.REPPO_NETWORK = 'robinhood';
+    expect(loadConfig().network).toBe('robinhood');
+  });
+
+  it('accepts robinhood as an override', () => {
+    const { cwd, home } = freshTmp();
+    pointAt(cwd, home);
+    expect(loadConfig({ network: 'robinhood' }).network).toBe('robinhood');
+  });
+
   it('throws on invalid network value from env', () => {
     const { cwd, home } = freshTmp();
     pointAt(cwd, home);
@@ -129,6 +142,13 @@ describe('loadConfig — apiUrl', () => {
     const { cwd, home } = freshTmp();
     pointAt(cwd, home);
     process.env.REPPO_NETWORK = 'testnet';
+    expect(loadConfig().apiUrl).toBeUndefined();
+  });
+
+  it('returns undefined on robinhood (platform API is Privy-authed, not wallet-authed)', () => {
+    const { cwd, home } = freshTmp();
+    pointAt(cwd, home);
+    process.env.REPPO_NETWORK = 'robinhood';
     expect(loadConfig().apiUrl).toBeUndefined();
   });
 

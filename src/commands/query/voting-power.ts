@@ -57,10 +57,15 @@ export class QueryVotingPowerCommand extends BaseCommand {
             .then((v) => ({ raw: v.toString(), formatted: formatUnits(v, 18) }))
         : unavailable(cfg.network);
 
-      const lockupCount: Count = ve
-        ? await client.readContract({ ...ve, functionName: 'balanceOf', args: [addr] })
-            .then((v) => ({ value: v.toString() }))
-        : unavailable(cfg.network);
+      // RBV1 (robinhood) veReppo is a plain voting-power mirror, not a lockup
+      // NFT — it has no balanceOf, and voting power there is admin-synced from
+      // the wallet's Base veREPPO position via robinhood.reppo.ai.
+      const lockupCount: Count = cfg.network === 'robinhood'
+        ? { unavailable: 'no lockups on robinhood — voting power is mirrored from Base veREPPO.' }
+        : ve
+          ? await client.readContract({ ...ve, functionName: 'balanceOf', args: [addr] })
+              .then((v) => ({ value: v.toString() }))
+          : unavailable(cfg.network);
 
       const result = { address: addr, network: cfg.network, votingPower, lockupCount };
 

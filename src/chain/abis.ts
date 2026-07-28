@@ -79,6 +79,38 @@ export const VE_REPPO_ABI = parseAbi([
   'function ownerOf(uint256 tokenId) view returns (address)',
 ]);
 
+// ── RBV1 (Robinhood Chain, 4663) ───────────────────────────────────────
+//
+// The RBV1 contract family is a single-token variant of V2: every fee
+// (access, publishing, republish) is charged in the subnet's own ERC-20
+// (`getSubnetToken`), so the REPPO/primary-token function split does not
+// exist. Functions whose signatures are IDENTICAL to V2 (vote, claims,
+// podValid, ownerOf, the per-epoch vote getters, veReppo epoch/votingPower
+// reads) are not redeclared — commands keep using POD_MANAGER_ABI /
+// VE_REPPO_ABI against the RBV1 address for those.
+// Source: Reppo-Labs/economic-contracts src/{PodManager,SubnetManager}RBV1.sol.
+
+export const POD_MANAGER_RBV1_ABI = parseAbi([
+  // Single mint entrypoint; pulls getPublishingFee(subnetId) in the subnet
+  // token from the signer via transferFrom (approve first).
+  'function mintPod(address to, uint256 subnetId) returns (uint256 podId)',
+  // Remaining seeded emission funding (single pool — no REPPO/primary split).
+  'function getSubnetSeedings(uint256 subnetId) view returns (uint256)',
+  'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)',
+]);
+
+export const SUBNET_MANAGER_RBV1_ABI = parseAbi([
+  // Single access entrypoint; pulls getAccessFee(subnetId) in the subnet token.
+  'function accessSubnet(uint256 subnetId, address to)',
+  'function hasSubnetAccess(uint256 subnetId, address address_) view returns (bool)',
+  'function validSubnet(uint256 subnetId) view returns (bool)',
+  'function getAccessFee(uint256 subnetId) view returns (uint256)',
+  'function getPublishingFee(uint256 subnetId) view returns (uint256)',
+  'function getRepublishFee(uint256 subnetId) view returns (uint256)',
+  'function getSubnetToken(uint256 subnetId) view returns (address)',
+  'function subnetOwner(uint256 subnetId) view returns (address)',
+]);
+
 export const ERC20_ABI = parseAbi([
   'function name() view returns (string)',
   'function symbol() view returns (string)',

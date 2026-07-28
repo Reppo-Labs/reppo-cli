@@ -9,7 +9,11 @@ import { markConfirmed, markFailed } from '../state/idempotency.js';
 import { cliError, emit } from '../output/format.js';
 import type { CacheDecision } from '../state/idempotency.js';
 
+// Kept as `basescanTxUrl` / emitted as `basescanUrl` even though robinhood's
+// explorer is not basescan — the JSON field name is part of the output
+// contract consumers already parse.
 export function basescanTxUrl(network: Network, tx: string): string {
+  if (network === 'robinhood') return `https://explorer.mainnet.chain.robinhood.com/tx/${tx}`;
   return network === 'mainnet'
     ? `https://basescan.org/tx/${tx}`
     : `https://sepolia.basescan.org/tx/${tx}`;

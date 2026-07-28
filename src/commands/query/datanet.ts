@@ -22,8 +22,8 @@ import { privateKeyToAddress } from 'viem/accounts';
 import { BaseCommand } from '../_base.js';
 import { cliError, emit } from '../../output/format.js';
 import { createReadClient } from '../../chain/clients.js';
-import { trySubnetManager, tryVeReppo, tryPodManager, erc20 } from '../../chain/contracts.js';
-import { DEFAULT_PUBLIC_API_URL } from '../../api/public.js';
+import { trySubnetManager, tryVeReppo, tryPodManager, subnetManagerRb, podManagerRb, erc20 } from '../../chain/contracts.js';
+import { defaultPublicApiUrl } from '../../api/public.js';
 import { fetchSubnetByTokenId, numericToString, type RawSubnet } from '../../api/subnets.js';
 
 type Numeric = { raw: string; formatted: string } | { unavailable: string };
@@ -83,10 +83,14 @@ export class QueryDatanetCommand extends BaseCommand {
       // Off-chain catalog metadata (name, description, token, emissions,
       // onboarding). Best-effort: a catalog outage or a datanet absent from
       // the public catalog must NOT break the authoritative on-chain answer.
-      const metadata = await this.fetchMetadata(datanetId.toString());
+      const metadata = await this.fetchMetadata(datanetId.toString(), cfg.network);
 
       const client = createReadClient({ network: cfg.network, ...(cfg.rpcUrl ? { rpcUrl: cfg.rpcUrl } : {}) });
       const sm = trySubnetManager(cfg.network);
+      // RBV1 pairings (same addresses, single-token ABI). Null off-robinhood.
+      const isRbNetwork = cfg.network === 'robinhood';
+      const smRb = isRbNetwork ? subnetManagerRb(cfg.network) : null;
+      const pmRb = isRbNetwork ? podManagerRb(cfg.network) : null;
 
       if (!sm) {
         const reason = `Datanet manager address not configured for ${cfg.network}.`;
@@ -128,21 +132,25 @@ export class QueryDatanetCommand extends BaseCommand {
       // Skip the fee read on invalid datanets — getAccessFeeREPPO is likely
       // to revert (or return 0) for non-existent datanets, and either way
       // the answer is "no fee because there is no datanet", not "fee is 0".
-      const accessFeeREPPO: Numeric = valid
-        ? await client.readContract({ ...sm, functionName: 'getAccessFeeREPPO', args: [datanetId] })
-            .then((v) => ({ raw: v.toString(), formatted: formatUnits(v, 18) }))
-        : unavailable('datanet does not exist');
+      const accessFeeREPPO: Numeric = isRbNetwork
+        ? unavailable('no REPPO fees on robinhood — fees are charged in the subnet token')
+        : valid
+          ? await client.readContract({ ...sm, functionName: 'getAccessFeeREPPO', args: [datanetId] })
+              .then((v) => ({ raw: v.toString(), formatted: formatUnits(v, 18) }))
+          : unavailable('datanet does not exist');
 
       // Per-mint publishing fee — what mintPodWithREPPO pulls from the signer on
       // EVERY mint, separate from (and additional to) the one-time access fee.
       // Surfaced so publishers can pre-flight balance instead of discovering the
       // fee via a TransferAmountExceedsBalance revert that still burns gas.
       // Best-effort: a revert here must not break the authoritative fields above.
-      const publishingFeeREPPO: Numeric = valid
-        ? await client.readContract({ ...sm, functionName: 'getPublishingFeeREPPO', args: [datanetId] })
-            .then((v) => ({ raw: v.toString(), formatted: formatUnits(v, 18) }))
-            .catch(() => unavailable('publishing fee read failed'))
-        : unavailable('datanet does not exist');
+      const publishingFeeREPPO: Numeric = isRbNetwork
+        ? unavailable('no REPPO fees on robinhood — fees are charged in the subnet token')
+        : valid
+          ? await client.readContract({ ...sm, functionName: 'getPublishingFeeREPPO', args: [datanetId] })
+              .then((v) => ({ raw: v.toString(), formatted: formatUnits(v, 18) }))
+              .catch(() => unavailable('publishing fee read failed'))
+          : unavailable('datanet does not exist');
 
       // Primary-token access fee — for datanets that charge access in their own
       // token rather than REPPO. Best-effort and decimals-aware: a revert here
@@ -157,9 +165,16 @@ export class QueryDatanetCommand extends BaseCommand {
       let primaryIsZeroAddress = false;
       if (valid) {
         try {
-          const primaryAddr = await client.readContract({
-            ...sm, functionName: 'getSubnetPrimaryToken', args: [datanetId],
-          });
+          // RBV1's subnet token plays the primary-token role: the single
+          // access/publishing fee is charged in it, so its fees flow through
+          // the same *PrimaryToken output fields consumers already read.
+          const primaryAddr = smRb
+            ? await client.readContract({
+                address: smRb.address, abi: smRb.abi, functionName: 'getSubnetToken', args: [datanetId],
+              })
+            : await client.readContract({
+                ...sm, functionName: 'getSubnetPrimaryToken', args: [datanetId],
+              });
           // getSubnetPrimaryToken returns address(0) for REPPO-only datanets.
           // Short-circuit BEFORE touching the token (mirrors grant-access.ts's
           // guard): no decimals()/symbol()/fee read, and primaryToken stays
@@ -177,9 +192,13 @@ export class QueryDatanetCommand extends BaseCommand {
               // symbol is cosmetic — best-effort: bytes32/non-standard tokens fail
               // to decode against the `string` ABI; fall back to '' rather than abort.
               client.readContract({ ...ft, functionName: 'symbol' }).catch(() => ''),
-              client.readContract({ ...sm, functionName: 'getAccessFeePrimaryToken', args: [datanetId] }),
+              smRb
+                ? client.readContract({ address: smRb.address, abi: smRb.abi, functionName: 'getAccessFee', args: [datanetId] })
+                : client.readContract({ ...sm, functionName: 'getAccessFeePrimaryToken', args: [datanetId] }),
               // best-effort like the symbol read — null sentinel keeps the access fee intact.
-              client.readContract({ ...sm, functionName: 'getPublishingFeePrimaryToken', args: [datanetId] }).catch(() => null),
+              smRb
+                ? client.readContract({ address: smRb.address, abi: smRb.abi, functionName: 'getPublishingFee', args: [datanetId] }).catch(() => null)
+                : client.readContract({ ...sm, functionName: 'getPublishingFeePrimaryToken', args: [datanetId] }).catch(() => null),
             ]);
             const decimals = Number(dec);
             primaryToken = { address: primaryAddr, symbol: sym, decimals };
@@ -205,7 +224,17 @@ export class QueryDatanetCommand extends BaseCommand {
       const podManagerReason = `PodManager address not configured for ${cfg.network}.`;
       let rewardsPoolREPPO: Numeric = unavailable(podManagerReason);
       let rewardsPoolPrimaryToken: Numeric = unavailable(podManagerReason);
-      if (pm && valid) {
+      if (pmRb && valid) {
+        // RBV1 keeps ONE seeded pool per subnet, denominated in the subnet
+        // token — reported through the primary-token field like the fees.
+        rewardsPoolREPPO = unavailable('no REPPO pool on robinhood — emissions are in the subnet token');
+        const rbDecimals = primaryToken?.decimals;
+        rewardsPoolPrimaryToken = rbDecimals === undefined
+          ? unavailable('subnet token metadata unavailable')
+          : await client.readContract({ address: pmRb.address, abi: pmRb.abi, functionName: 'getSubnetSeedings', args: [datanetId] })
+              .then((v) => ({ raw: v.toString(), formatted: formatUnits(v, rbDecimals) }))
+              .catch(() => unavailable('rewards pool read failed'));
+      } else if (pm && valid) {
         const reppoPoolPromise = client.readContract({ ...pm, functionName: 'getSubnetReppoSeedings', args: [datanetId] })
           .then((v) => ({ raw: v.toString(), formatted: formatUnits(v, 18) }))
           .catch(() => unavailable('rewards pool read failed'));
@@ -324,8 +353,8 @@ export class QueryDatanetCommand extends BaseCommand {
    * or a no-match, never throwing — the on-chain answer is authoritative and
    * must survive a flaky platform API.
    */
-  private async fetchMetadata(tokenId: string): Promise<Metadata> {
-    const baseUrl = process.env.REPPO_PUBLIC_API_URL ?? DEFAULT_PUBLIC_API_URL;
+  private async fetchMetadata(tokenId: string, network: string): Promise<Metadata> {
+    const baseUrl = process.env.REPPO_PUBLIC_API_URL ?? defaultPublicApiUrl(network);
     try {
       const row = await fetchSubnetByTokenId(baseUrl, tokenId);
       if (!row) return unavailable('datanet not found in the public catalog');
@@ -347,7 +376,9 @@ export class QueryDatanetCommand extends BaseCommand {
         decimals: typeof s.nativeTokenDecimals === 'number' ? s.nativeTokenDecimals : 0,
       },
       emissionsPerEpochREPPO: numericToString(s.emissionsPerEpochREPPO),
-      emissionsPerEpochPrimaryToken: numericToString(s.emissionsPerEpochPrimaryToken),
+      // Robinhood rows serve a single `emissionsPerEpoch` (subnet token);
+      // surface it through the primary-token field so consumers see it.
+      emissionsPerEpochPrimaryToken: numericToString(s.emissionsPerEpochPrimaryToken ?? s.emissionsPerEpoch),
       upVoteVolume: numericToString(s.upVoteVolume),
       downVoteVolume: numericToString(s.downVoteVolume),
       onboardingPublishers: s.onboardingPublishers ?? '',

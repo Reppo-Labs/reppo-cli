@@ -21,6 +21,16 @@ import { cliError } from '../output/format.js';
 
 export const DEFAULT_PUBLIC_API_URL = 'https://reppo.ai';
 
+/** Robinhood datanets live in a separate catalog served by robinhood.reppo.ai
+ *  (same /api/v1/public/* DTO shape; fee fields are single-token variants). */
+export const ROBINHOOD_PUBLIC_API_URL = 'https://robinhood.reppo.ai';
+
+/** Per-network public catalog base. The reppo.ai catalog only knows Base
+ *  mainnet datanets; robinhood rows come from robinhood.reppo.ai. */
+export function defaultPublicApiUrl(network?: string): string {
+  return network === 'robinhood' ? ROBINHOOD_PUBLIC_API_URL : DEFAULT_PUBLIC_API_URL;
+}
+
 /**
  * Unauthenticated GET against the Reppo public API. Returns parsed JSON
  * or throws `PUBLIC_API_*` on transport / non-2xx / parse failures.

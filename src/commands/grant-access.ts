@@ -27,10 +27,10 @@ import { formatUnits, isAddress, type Address } from 'viem';
 import { BaseCommand } from './_base.js';
 import { cliError, emit } from '../output/format.js';
 import { createClients, nextNonce } from '../chain/clients.js';
-import { subnetManager, reppoToken, erc20 } from '../chain/contracts.js';
+import { subnetManager, subnetManagerRb, reppoToken, erc20 } from '../chain/contracts.js';
 import { ensureAllowance } from '../chain/allowance.js';
 import { decodeRevert } from '../chain/errors.js';
-import { handleSubmittedCacheDecision } from './write-cache.js';
+import { handleSubmittedCacheDecision, basescanTxUrl } from './write-cache.js';
 import { waitForWriteReceipt, receiptGasEth, tokenFeeFromReceipt } from '../chain/receipt.js';
 import { begin, markSubmitted, markConfirmed, markFailed, peekIdempotent } from '../state/idempotency.js';
 
@@ -89,6 +89,18 @@ export class GrantAccessCommand extends BaseCommand {
       if (this.token !== 'reppo' && this.token !== 'primary') {
         throw cliError('INVALID_TOKEN', `--token must be "reppo" or "primary"; got "${this.token}".`);
       }
+      // RBV1 (robinhood) has a single accessSubnet(subnetId, to) that always
+      // charges the subnet's own token — the REPPO/primary choice doesn't
+      // exist there. The default --token value ("reppo") is tolerated.
+      const isRbNetwork = cfg.network === 'robinhood';
+      if (isRbNetwork && this.token === 'primary') {
+        throw cliError(
+          'INVALID_TOKEN',
+          "--token does not apply on robinhood — the access fee is always paid in the datanet's own token.",
+          'Drop the --token flag; the fee token is resolved on-chain via getSubnetToken.',
+        );
+      }
+      const tokenLabel = isRbNetwork ? 'subnet-token' : this.token;
       const fns = accessFns(this.token);
 
       const clients = createClients({
@@ -103,7 +115,7 @@ export class GrantAccessCommand extends BaseCommand {
             : (() => { throw cliError('INVALID_ADDRESS', `Invalid --to address: ${this.to}`); })())
         : clients.account.address;
 
-      const args = { datanetId: datanetId.toString(), to: target.toLowerCase(), token: this.token };
+      const args = { datanetId: datanetId.toString(), to: target.toLowerCase(), token: tokenLabel };
 
       const decision = await peekIdempotent<Record<string, unknown>>(
         this.idempotencyKey, COMMAND, args, this.dryRun,
@@ -129,13 +141,13 @@ export class GrantAccessCommand extends BaseCommand {
             const base: Record<string, unknown> = {
               datanetId: datanetId.toString(),
               to: target,
-              token: this.token,
+              token: tokenLabel,
               gasEth: receiptGasEth(receipt),
             };
             if (ftMeta) {
               const feePaid = tokenFeeFromReceipt(receipt, ftMeta.address, clients.account.address, ftMeta.decimals);
               base.feePaid = feePaid;
-              if (this.token === 'reppo') base.reppoFee = feePaid;
+              if (!isRbNetwork && this.token === 'reppo') base.reppoFee = feePaid;
             }
             return base;
           },
@@ -143,6 +155,8 @@ export class GrantAccessCommand extends BaseCommand {
       }
 
       const sm = subnetManager(cfg.network);
+      // RBV1 pairing (same address, single-token ABI). Null off-robinhood.
+      const smRb = isRbNetwork ? subnetManagerRb(cfg.network) : null;
 
       // Validate the datanet BEFORE resolving the fee token. A nonexistent
       // datanet must surface DATANET_NOT_FOUND — not DATANET_HAS_NO_PRIMARY_TOKEN
@@ -163,7 +177,30 @@ export class GrantAccessCommand extends BaseCommand {
       let feeTokenAddress: Address;
       let feeTokenDecimals: number;
       let feeTokenSymbol: string;
-      if (this.token === 'reppo') {
+      if (smRb) {
+        // RBV1: the fee token is always the subnet's own ERC-20.
+        const subnetToken = await clients.publicClient.readContract({
+          address: smRb.address, abi: smRb.abi, functionName: 'getSubnetToken', args: [datanetId],
+        });
+        if (BigInt(subnetToken) === 0n) {
+          throw cliError('DATANET_HAS_NO_PRIMARY_TOKEN',
+            `Datanet ${datanetId} has no subnet token configured on ${cfg.network}.`,
+            'The datanet creator has not set a token — access cannot be paid for yet.');
+        }
+        feeTokenAddress = subnetToken;
+        const ft = erc20(feeTokenAddress);
+        feeTokenDecimals = await clients.publicClient
+          .readContract({ ...ft, functionName: 'decimals' })
+          .then((dec) => Number(dec))
+          .catch(() => {
+            throw cliError('INVALID_PRIMARY_TOKEN',
+              `Could not read decimals() for datanet ${datanetId} subnet token ${feeTokenAddress}.`,
+              'The subnet token is not a standard ERC20 (decimals() reverted or returned non-numeric data).');
+          });
+        feeTokenSymbol = await clients.publicClient
+          .readContract({ ...ft, functionName: 'symbol' })
+          .catch(() => `${feeTokenAddress.slice(0, 6)}…${feeTokenAddress.slice(-4)}`);
+      } else if (this.token === 'reppo') {
         feeTokenAddress = reppoToken(cfg.network).address;
         feeTokenDecimals = 18;
         feeTokenSymbol = 'REPPO';
@@ -208,7 +245,9 @@ export class GrantAccessCommand extends BaseCommand {
       // Pre-flight in parallel where independent (validSubnet already checked above).
       const [alreadyHasAccess, fee, balance, allowance] = await Promise.all([
         clients.publicClient.readContract({ address: sm.address, abi: sm.abi, functionName: 'hasSubnetAccess', args: [datanetId, target] }),
-        clients.publicClient.readContract({ address: sm.address, abi: sm.abi, functionName: fns.feeGetter, args: [datanetId] }),
+        smRb
+          ? clients.publicClient.readContract({ address: smRb.address, abi: smRb.abi, functionName: 'getAccessFee', args: [datanetId] })
+          : clients.publicClient.readContract({ address: sm.address, abi: sm.abi, functionName: fns.feeGetter, args: [datanetId] }),
         clients.publicClient.readContract({ ...feeToken, functionName: 'balanceOf', args: [clients.account.address] }),
         clients.publicClient.readContract({ ...feeToken, functionName: 'allowance', args: [clients.account.address, sm.address] }),
       ]);
@@ -219,7 +258,7 @@ export class GrantAccessCommand extends BaseCommand {
       }
       if (balance < fee) {
         throw cliError(
-          this.token === 'reppo' ? 'INSUFFICIENT_REPPO_BALANCE' : 'INSUFFICIENT_TOKEN_BALANCE',
+          !isRbNetwork && this.token === 'reppo' ? 'INSUFFICIENT_REPPO_BALANCE' : 'INSUFFICIENT_TOKEN_BALANCE',
           `Caller has ${formatUnits(balance, feeTokenDecimals)} ${feeTokenSymbol} but the fee is ${formatUnits(fee, feeTokenDecimals)} ${feeTokenSymbol}.`,
           `Acquire more ${feeTokenSymbol} before granting access.`,
         );
@@ -233,7 +272,7 @@ export class GrantAccessCommand extends BaseCommand {
         feeToken: { symbol: feeTokenSymbol, address: feeTokenAddress, decimals: feeTokenDecimals },
         feeAmount: { raw: fee.toString(), formatted: formatUnits(fee, feeTokenDecimals) },
         // Legacy REPPO field for back-compat with existing consumers; only set on the REPPO path.
-        ...(this.token === 'reppo'
+        ...(!isRbNetwork && this.token === 'reppo'
           ? { feeREPPO: { raw: fee.toString(), formatted: formatUnits(fee, 18) } }
           : {}),
       };
@@ -247,25 +286,33 @@ export class GrantAccessCommand extends BaseCommand {
             wouldAutoApprove: { token: feeTokenAddress, spender: sm.address, currentAllowance: formatUnits(allowance, feeTokenDecimals) },
             datanetId: datanetId.toString(),
             to: target,
-            token: this.token,
+            token: tokenLabel,
             ...feeFields,
           }, [
             `(dry-run) would auto-approve SubnetManager for ${feeTokenSymbol}, then grant ${target} access to datanet ${datanetId}`,
           ]);
           return 0;
         }
-        const sim = await clients.publicClient.simulateContract({
-          address: sm.address, abi: sm.abi, functionName: fns.access,
-          args: [datanetId, target], account: clients.account,
-        }).catch((e) => {
-          const decoded = decodeRevert(e);
-          throw cliError(decoded.code, 'Simulation reverted', decoded.hint);
-        });
+        const sim = smRb
+          ? await clients.publicClient.simulateContract({
+              address: smRb.address, abi: smRb.abi, functionName: 'accessSubnet',
+              args: [datanetId, target], account: clients.account,
+            }).catch((e) => {
+              const decoded = decodeRevert(e);
+              throw cliError(decoded.code, 'Simulation reverted', decoded.hint);
+            })
+          : await clients.publicClient.simulateContract({
+              address: sm.address, abi: sm.abi, functionName: fns.access,
+              args: [datanetId, target], account: clients.account,
+            }).catch((e) => {
+              const decoded = decodeRevert(e);
+              throw cliError(decoded.code, 'Simulation reverted', decoded.hint);
+            });
         emit({
           simulated: true,
           datanetId: datanetId.toString(),
           to: target,
-          token: this.token,
+          token: tokenLabel,
           ...feeFields,
           gas: sim.request.gas?.toString() ?? null,
         });
@@ -282,11 +329,17 @@ export class GrantAccessCommand extends BaseCommand {
       let tx: `0x${string}`;
       try {
         const nonce = await nextNonce(clients.publicClient, clients.account.address);
-        tx = await clients.walletClient.writeContract({
-          address: sm.address, abi: sm.abi, functionName: fns.access,
-          args: [datanetId, target],
-          chain: clients.walletClient.chain, account: clients.account, nonce,
-        });
+        tx = smRb
+          ? await clients.walletClient.writeContract({
+              address: smRb.address, abi: smRb.abi, functionName: 'accessSubnet',
+              args: [datanetId, target],
+              chain: clients.walletClient.chain, account: clients.account, nonce,
+            })
+          : await clients.walletClient.writeContract({
+              address: sm.address, abi: sm.abi, functionName: fns.access,
+              args: [datanetId, target],
+              chain: clients.walletClient.chain, account: clients.account, nonce,
+            });
       } catch (e) {
         const decoded = decodeRevert(e);
         if (this.idempotencyKey) await markFailed(this.idempotencyKey, COMMAND, args, decoded.code);
@@ -295,7 +348,7 @@ export class GrantAccessCommand extends BaseCommand {
 
       if (this.idempotencyKey) {
         await markSubmitted(this.idempotencyKey, COMMAND, args, tx, {
-          datanetId: datanetId.toString(), to: target, token: this.token, ...feeFields,
+          datanetId: datanetId.toString(), to: target, token: tokenLabel, ...feeFields,
         });
       }
 
@@ -313,15 +366,13 @@ export class GrantAccessCommand extends BaseCommand {
         feePaid,
         // Legacy top-level field for back-compat with pre-0.8.5 consumers that
         // read `reppoFee`; only meaningful on the REPPO path.
-        ...(this.token === 'reppo' ? { reppoFee: feePaid } : {}),
+        ...(!isRbNetwork && this.token === 'reppo' ? { reppoFee: feePaid } : {}),
         datanetId: datanetId.toString(),
         to: target,
-        token: this.token,
+        token: tokenLabel,
         ...feeFields,
         block: receipt.blockNumber.toString(),
-        basescanUrl: cfg.network === 'mainnet'
-          ? `https://basescan.org/tx/${tx}`
-          : `https://sepolia.basescan.org/tx/${tx}`,
+        basescanUrl: basescanTxUrl(cfg.network, tx),
       };
       if (this.idempotencyKey) await markConfirmed(this.idempotencyKey, COMMAND, args, result, tx);
 

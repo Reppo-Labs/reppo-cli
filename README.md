@@ -20,7 +20,7 @@ The CLI is non-interactive — all credentials come from environment variables:
 |---|---|---|
 | `REPPO_PRIVATE_KEY` | All write commands | EOA private key (32-byte hex) |
 | `REPPO_VOTER_PRIVATE_KEY` | `vote` (optional) | Separate EOA for voting (publishers cannot vote on their own pods) |
-| `REPPO_NETWORK` | All commands (optional) | `mainnet` (default) or `testnet` |
+| `REPPO_NETWORK` | All commands (optional) | `mainnet` (default), `testnet`, or `robinhood` |
 | `REPPO_RPC_URL` | All commands (optional) | Override RPC endpoint |
 | `REPPO_API_URL` | Platform-API commands (optional) | Override Reppo API base |
 | `REPPO_API_KEY` | `register-agent`, `create-datanet` | Reppo platform API key |
@@ -28,7 +28,21 @@ The CLI is non-interactive — all credentials come from environment variables:
 | `REPPO_AGENT_API_KEY` | `mint-pod` Phase-2 publishing (optional) | Agent Bearer key from `register-agent`; falls back to `REPPO_API_KEY` |
 | `PINATA_JWT` | `mint-pod --dataset` (optional) | Pinata JWT for pinning a dataset to IPFS before publishing |
 
-Network can also be set per-call via `--network mainnet|testnet`.
+Network can also be set per-call via `--network mainnet|testnet|robinhood`.
+
+### Robinhood Chain (`--network robinhood`)
+
+Robinhood Chain mainnet (chain id 4663) runs the RBV1 contract variant, which differs from Base:
+
+- **Fees are paid in each datanet's own token** (e.g. PAW, PONS) — there is no REPPO or USDC
+  on the chain. `mint-pod` and `grant-access` resolve the fee token on-chain and auto-approve it;
+  the `--token` flag does not apply.
+- **No staking**: `lock` / `extend-lock` / `unlock` error with `UNSUPPORTED_ON_NETWORK`. Voting
+  power is mirrored from your **Base** veREPPO position — lock on Base, then sync at
+  [robinhood.reppo.ai](https://robinhood.reppo.ai).
+- **Catalog** comes from `robinhood.reppo.ai` (`list datanets`, `query datanet` metadata).
+- **Platform-API commands** (`auth`, `list pods`, `query emissions-due`, mint-pod Phase-2
+  publishing) are not available — the robinhood platform has no wallet-authed API yet.
 
 ## Output
 

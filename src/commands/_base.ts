@@ -20,17 +20,33 @@ export abstract class BaseCommand extends Command {
   protected loadConfig(): Config {
     setOutputMode(this.json ? 'json' : 'human');
     const overrides: { network?: Network } = {};
-    if (this.network === 'mainnet' || this.network === 'testnet') {
+    if (this.network === 'mainnet' || this.network === 'testnet' || this.network === 'robinhood') {
       overrides.network = this.network;
     } else if (this.network) {
       throw cliError(
         'INVALID_NETWORK',
-        `--network must be "mainnet" or "testnet", got "${this.network}"`,
+        `--network must be "mainnet", "testnet", or "robinhood", got "${this.network}"`,
       );
     }
     const cfg = loadConfig(overrides);
     if (this.rpcUrl) cfg.rpcUrl = this.rpcUrl;
     return cfg;
+  }
+
+  /**
+   * Guard for commands that require on-chain veREPPO staking. Robinhood
+   * Chain runs the RBV1 variant: VeReppoRBV1 has no stake/withdraw —
+   * voting power there is mirrored from the wallet's Base veREPPO
+   * position by robinhood.reppo.ai.
+   */
+  protected requireStakingNetwork(network: Network): void {
+    if (network === 'robinhood') {
+      throw cliError(
+        'UNSUPPORTED_ON_NETWORK',
+        'veREPPO staking does not exist on Robinhood Chain — voting power is mirrored from your Base veREPPO position.',
+        'Lock on Base instead (`reppo lock --network mainnet …`), then sync voting power at https://robinhood.reppo.ai.',
+      );
+    }
   }
 
   protected handleError(err: unknown): never {

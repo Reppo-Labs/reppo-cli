@@ -27,7 +27,7 @@ import { cliError, emit } from '../output/format.js';
 import { createClients, nextNonce } from '../chain/clients.js';
 import { podManager, veReppo } from '../chain/contracts.js';
 import { decodeRevert } from '../chain/errors.js';
-import { handleSubmittedCacheDecision } from './write-cache.js';
+import { handleSubmittedCacheDecision, basescanTxUrl } from './write-cache.js';
 import { waitForWriteReceipt, receiptGasEth } from '../chain/receipt.js';
 import { begin, markSubmitted, markConfirmed, markFailed, peekIdempotent } from '../state/idempotency.js';
 
@@ -237,9 +237,7 @@ export class VoteCommand extends BaseCommand {
         like: likeBool,
         voterPower: power.toString(),
         block: receipt.blockNumber.toString(),
-        basescanUrl: cfg.network === 'mainnet'
-          ? `https://basescan.org/tx/${tx}`
-          : `https://sepolia.basescan.org/tx/${tx}`,
+        basescanUrl: basescanTxUrl(cfg.network, tx),
       };
       if (this.idempotencyKey) await markConfirmed(this.idempotencyKey, COMMAND, args, result, tx);
 

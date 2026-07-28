@@ -30,11 +30,11 @@ import { isAddress, type Address } from 'viem';
 import { BaseCommand } from './_base.js';
 import { cliError, emit } from '../output/format.js';
 import { createClients, nextNonce } from '../chain/clients.js';
-import { podManager, subnetManager, reppoToken } from '../chain/contracts.js';
+import { podManager, podManagerRb, subnetManager, subnetManagerRb, erc20, reppoToken } from '../chain/contracts.js';
 import { ensureAllowance } from '../chain/allowance.js';
 import { decodeRevert } from '../chain/errors.js';
-import { handleSubmittedCacheDecision } from './write-cache.js';
-import { waitForWriteReceipt, receiptGasEth, reppoFeeFromReceipt } from '../chain/receipt.js';
+import { handleSubmittedCacheDecision, basescanTxUrl } from './write-cache.js';
+import { waitForWriteReceipt, receiptGasEth, reppoFeeFromReceipt, tokenFeeFromReceipt } from '../chain/receipt.js';
 import { begin, markSubmitted, markConfirmed, markFailed, peekIdempotent } from '../state/idempotency.js';
 import {
   pinDatasetToIpfs,
@@ -159,6 +159,19 @@ export class MintPodCommand extends BaseCommand {
           `--token must be "reppo" or "primary"; got "${this.token}".`,
         );
       }
+      // RBV1 (robinhood) has a single mintPod(to, subnetId) that always
+      // charges the subnet's own token — the REPPO/primary choice doesn't
+      // exist there. The default --token value ("reppo") is tolerated so
+      // plain `reppo mint-pod --datanet N` works unchanged.
+      const isRbNetwork = cfg.network === 'robinhood';
+      if (isRbNetwork && this.token === 'primary') {
+        throw cliError(
+          'INVALID_TOKEN',
+          "--token does not apply on robinhood — the publishing fee is always paid in the datanet's own token.",
+          'Drop the --token flag; the fee token is resolved on-chain via getSubnetToken.',
+        );
+      }
+      const tokenLabel = isRbNetwork ? 'subnet-token' : this.token;
       const functionName = this.token === 'reppo' ? 'mintPodWithREPPO' : 'mintPodWithPrimaryToken';
 
       // Validate Phase-2 metadata config NOW, before any on-chain write, so
@@ -166,6 +179,17 @@ export class MintPodCommand extends BaseCommand {
       // fast instead of after an irreversible mint. Returns null when
       // --pod-name is absent (publishing is opt-in).
       const publish = this.resolvePublishIntent(cfg);
+      // Phase-2 metadata registration posts to the reppo.ai platform, which
+      // does not know robinhood subnets (robinhood.reppo.ai is a separate,
+      // Privy-authed platform with no agent metadata API yet). Fail fast
+      // rather than registering metadata against the wrong platform.
+      if (isRbNetwork && publish) {
+        throw cliError(
+          'UNSUPPORTED_ON_NETWORK',
+          'Pod metadata publishing (--pod-name) is not available on robinhood yet.',
+          'Mint without --pod-name; robinhood pods get metadata via robinhood.reppo.ai once its API supports agents.',
+        );
+      }
 
       const clients = createClients({
         network: cfg.network,
@@ -179,7 +203,7 @@ export class MintPodCommand extends BaseCommand {
             : (() => { throw cliError('INVALID_ADDRESS', `Invalid --to address: ${this.to}`); })())
         : clients.account.address;
 
-      const args = { datanetId: datanetId.toString(), token: this.token, to: target.toLowerCase() };
+      const args = { datanetId: datanetId.toString(), token: tokenLabel, to: target.toLowerCase() };
 
       const decision = await peekIdempotent<Record<string, unknown>>(
         this.idempotencyKey, COMMAND, args, this.dryRun,
@@ -212,12 +236,15 @@ export class MintPodCommand extends BaseCommand {
           args,
           network: cfg.network,
           publicClient: clients.publicClient,
-          buildResult: () => ({ datanetId: datanetId.toString(), token: this.token, to: target }),
+          buildResult: () => ({ datanetId: datanetId.toString(), token: tokenLabel, to: target }),
         });
       }
 
       const pm = podManager(cfg.network);
       const sm = subnetManager(cfg.network);
+      // RBV1 pairings (same addresses, single-token ABI). Null off-robinhood.
+      const pmRb = isRbNetwork ? podManagerRb(cfg.network) : null;
+      const smRb = isRbNetwork ? subnetManagerRb(cfg.network) : null;
 
       // Pre-flight: validate the datanet exists. The contract would
       // revert with InvalidSubnet otherwise; failing fast here gives a
@@ -234,22 +261,28 @@ export class MintPodCommand extends BaseCommand {
       }
 
       const basescanUrlFor = (tx: `0x${string}`) =>
-        cfg.network === 'mainnet'
-          ? `https://basescan.org/tx/${tx}`
-          : `https://sepolia.basescan.org/tx/${tx}`;
+        basescanTxUrl(cfg.network, tx);
 
       if (this.dryRun) {
-        const sim = await clients.publicClient.simulateContract({
-          address: pm.address, abi: pm.abi, functionName,
-          args: [target, datanetId], account: clients.account,
-        }).catch((e) => {
-          const decoded = decodeRevert(e);
-          throw cliError(decoded.code, 'Simulation reverted', decoded.hint);
-        });
+        const sim = pmRb
+          ? await clients.publicClient.simulateContract({
+              address: pmRb.address, abi: pmRb.abi, functionName: 'mintPod',
+              args: [target, datanetId], account: clients.account,
+            }).catch((e) => {
+              const decoded = decodeRevert(e);
+              throw cliError(decoded.code, 'Simulation reverted', decoded.hint);
+            })
+          : await clients.publicClient.simulateContract({
+              address: pm.address, abi: pm.abi, functionName,
+              args: [target, datanetId], account: clients.account,
+            }).catch((e) => {
+              const decoded = decodeRevert(e);
+              throw cliError(decoded.code, 'Simulation reverted', decoded.hint);
+            });
         emit({
           simulated: true,
           datanetId: datanetId.toString(),
-          token: this.token,
+          token: tokenLabel,
           to: target,
           predictedPodId: sim.result.toString(),
           gas: sim.request.gas?.toString() ?? null,
@@ -273,17 +306,39 @@ export class MintPodCommand extends BaseCommand {
       // send transactions; its simulate reports InsufficientAllowance instead).
       // Outside the idempotency two-phase on purpose: approve() is self-idempotent
       // via the allowance read, and waiting for its receipt advances the nonce.
-      const feeFns = publishingFeeFns(this.token);
-      const fee = (await clients.publicClient.readContract({
-        address: sm.address, abi: sm.abi, functionName: feeFns.feeGetter, args: [datanetId],
-      }));
-      if (fee > 0n) {
-        const feeTokenAddress = feeFns.primaryFeeToken
-          ? ((await clients.publicClient.readContract({
-              address: sm.address, abi: sm.abi, functionName: 'getSubnetPrimaryToken', args: [datanetId],
-            })))
-          : reppoToken(cfg.network).address;
-        await ensureAllowance(clients, feeTokenAddress, pm.address, fee);
+      let rbFeeToken: Address | null = null;
+      let rbFeeTokenDecimals = 18;
+      if (smRb) {
+        const fee = await clients.publicClient.readContract({
+          address: smRb.address, abi: smRb.abi, functionName: 'getPublishingFee', args: [datanetId],
+        });
+        if (fee > 0n) {
+          rbFeeToken = await clients.publicClient.readContract({
+            address: smRb.address, abi: smRb.abi, functionName: 'getSubnetToken', args: [datanetId],
+          });
+          const t = erc20(rbFeeToken);
+          // Laxer than grant-access's hard INVALID_PRIMARY_TOKEN policy on
+          // purpose: decimals here only formats the cosmetic feePaid field —
+          // the allowance/approve below uses the raw wei fee, so a wrong
+          // fallback can't corrupt any amount that matters.
+          rbFeeTokenDecimals = await clients.publicClient
+            .readContract({ address: t.address, abi: t.abi, functionName: 'decimals' })
+            .catch(() => 18);
+          await ensureAllowance(clients, rbFeeToken, pm.address, fee);
+        }
+      } else {
+        const feeFns = publishingFeeFns(this.token);
+        const fee = (await clients.publicClient.readContract({
+          address: sm.address, abi: sm.abi, functionName: feeFns.feeGetter, args: [datanetId],
+        }));
+        if (fee > 0n) {
+          const feeTokenAddress = feeFns.primaryFeeToken
+            ? ((await clients.publicClient.readContract({
+                address: sm.address, abi: sm.abi, functionName: 'getSubnetPrimaryToken', args: [datanetId],
+              })))
+            : reppoToken(cfg.network).address;
+          await ensureAllowance(clients, feeTokenAddress, pm.address, fee);
+        }
       }
 
       if (this.idempotencyKey) await begin(this.idempotencyKey, COMMAND, args);
@@ -291,11 +346,17 @@ export class MintPodCommand extends BaseCommand {
       let tx: `0x${string}`;
       try {
         const nonce = await nextNonce(clients.publicClient, clients.account.address);
-        tx = await clients.walletClient.writeContract({
-          address: pm.address, abi: pm.abi, functionName,
-          args: [target, datanetId],
-          chain: clients.walletClient.chain, account: clients.account, nonce,
-        });
+        tx = pmRb
+          ? await clients.walletClient.writeContract({
+              address: pmRb.address, abi: pmRb.abi, functionName: 'mintPod',
+              args: [target, datanetId],
+              chain: clients.walletClient.chain, account: clients.account, nonce,
+            })
+          : await clients.walletClient.writeContract({
+              address: pm.address, abi: pm.abi, functionName,
+              args: [target, datanetId],
+              chain: clients.walletClient.chain, account: clients.account, nonce,
+            });
       } catch (e) {
         const decoded = decodeRevert(e);
         if (this.idempotencyKey) await markFailed(this.idempotencyKey, COMMAND, args, decoded.code);
@@ -305,7 +366,7 @@ export class MintPodCommand extends BaseCommand {
       if (this.idempotencyKey) {
         await markSubmitted(this.idempotencyKey, COMMAND, args, tx, {
           datanetId: datanetId.toString(),
-          token: this.token,
+          token: tokenLabel,
           to: target,
         });
       }
@@ -320,9 +381,19 @@ export class MintPodCommand extends BaseCommand {
       const result: Record<string, unknown> = {
         txHash: tx,
         gasEth: receiptGasEth(receipt),
-        reppoFee: reppoFeeFromReceipt(receipt, reppoToken(cfg.network).address, clients.account.address),
+        // On robinhood there is no REPPO token; the fee (if any) was paid in
+        // the subnet's own token, reported via feeToken/feePaid below.
+        reppoFee: isRbNetwork
+          ? null
+          : reppoFeeFromReceipt(receipt, reppoToken(cfg.network).address, clients.account.address),
+        ...(rbFeeToken
+          ? {
+              feeToken: rbFeeToken,
+              feePaid: tokenFeeFromReceipt(receipt, rbFeeToken, clients.account.address, rbFeeTokenDecimals),
+            }
+          : {}),
         datanetId: datanetId.toString(),
-        token: this.token,
+        token: tokenLabel,
         to: target,
         block: receipt.blockNumber.toString(),
         basescanUrl,
@@ -332,7 +403,7 @@ export class MintPodCommand extends BaseCommand {
       if (this.idempotencyKey) await markConfirmed(this.idempotencyKey, COMMAND, args, result, tx);
 
       const humanLines = [
-        `✓ Minted pod into datanet ${datanetId} (paid in ${this.token})`,
+        `✓ Minted pod into datanet ${datanetId} (paid in ${tokenLabel})`,
         `  to: ${target}`,
         `  tx: ${basescanUrl}`,
         `  block: ${receipt.blockNumber}`,

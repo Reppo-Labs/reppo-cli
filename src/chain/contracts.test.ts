@@ -5,9 +5,11 @@ import {
   tryVeReppo,
   tryReppoToken,
   tryUsdcToken,
+  podManagerRb,
+  subnetManagerRb,
   erc20,
 } from './contracts.js';
-import { SUBNET_MANAGER_ABI } from './abis.js';
+import { SUBNET_MANAGER_ABI, SUBNET_MANAGER_RBV1_ABI, POD_MANAGER_RBV1_ABI } from './abis.js';
 
 describe('tryX() non-throwing contract helpers', () => {
   describe('mainnet', () => {
@@ -51,6 +53,64 @@ describe('tryX() non-throwing contract helpers', () => {
     it('returns null for USDC (TBD on testnet)', () => {
       expect(tryUsdcToken('testnet')).toBeNull();
     });
+  });
+
+  describe('robinhood', () => {
+    it('tryPodManager returns the RBV1 PodManager address', () => {
+      expect(tryPodManager('robinhood')?.address).toBe('0xeAd1A577B02829b7F634aD7eE30Fbbc2CDF7e478');
+    });
+
+    it('returns RBV1 veReppo + SubnetManager addresses', () => {
+      expect(tryVeReppo('robinhood')?.address).toBe('0x15949C1727076a546eB055e9AB9E5bD32f069Db2');
+      expect(trySubnetManager('robinhood')?.address).toBe('0xDAd72306b2ee410B20795D353cF7913AA7Eb15aa');
+    });
+
+    it('returns null for REPPO and USDC (no such tokens on Robinhood Chain)', () => {
+      expect(tryReppoToken('robinhood')).toBeNull();
+      expect(tryUsdcToken('robinhood')).toBeNull();
+    });
+
+    it('podManagerRb pairs the RBV1 ABI with the same PodManager address', () => {
+      const c = podManagerRb('robinhood');
+      expect(c.address).toBe('0xeAd1A577B02829b7F634aD7eE30Fbbc2CDF7e478');
+      expect(c.abi).toBe(POD_MANAGER_RBV1_ABI);
+    });
+
+    it('subnetManagerRb pairs the RBV1 ABI with the same SubnetManager address', () => {
+      const c = subnetManagerRb('robinhood');
+      expect(c.address).toBe('0xDAd72306b2ee410B20795D353cF7913AA7Eb15aa');
+      expect(c.abi).toBe(SUBNET_MANAGER_RBV1_ABI);
+    });
+
+    it('RBV1 accessors refuse non-robinhood networks (would pair RBV1 ABI with a V2 address)', () => {
+      expect(() => podManagerRb('mainnet')).toThrow(/robinhood/);
+      expect(() => subnetManagerRb('testnet')).toThrow(/robinhood/);
+    });
+  });
+});
+
+describe('RBV1 ABIs — single-token surface', () => {
+  const smFns = SUBNET_MANAGER_RBV1_ABI.filter((e) => e.type === 'function').map((e) => e.name);
+  const pmFns = POD_MANAGER_RBV1_ABI.filter((e) => e.type === 'function').map((e) => e.name);
+
+  it('SubnetManagerRBV1 exposes single-token access/fee functions', () => {
+    expect(smFns).toContain('accessSubnet');
+    expect(smFns).toContain('getAccessFee');
+    expect(smFns).toContain('getPublishingFee');
+    expect(smFns).toContain('getSubnetToken');
+  });
+
+  it('SubnetManagerRBV1 has NO REPPO/primary split', () => {
+    expect(smFns).not.toContain('accessSubnetWithREPPOFee');
+    expect(smFns).not.toContain('accessSubnetWithPrimaryTokenFee');
+    expect(smFns).not.toContain('getAccessFeeREPPO');
+  });
+
+  it('PodManagerRBV1 exposes single mintPod and single seedings pool', () => {
+    expect(pmFns).toContain('mintPod');
+    expect(pmFns).toContain('getSubnetSeedings');
+    expect(pmFns).not.toContain('mintPodWithREPPO');
+    expect(pmFns).not.toContain('mintPodWithPrimaryToken');
   });
 });
 

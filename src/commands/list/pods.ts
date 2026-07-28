@@ -32,7 +32,7 @@ import { formatUnits } from 'viem';
 import { BaseCommand } from '../_base.js';
 import { cliError, emit } from '../../output/format.js';
 import { getOrRefreshSession, platformGet } from '../../api/platform.js';
-import { publicGet, DEFAULT_PUBLIC_API_URL } from '../../api/public.js';
+import { publicGet, defaultPublicApiUrl } from '../../api/public.js';
 
 // Mirror the shape used by `query/emissions-due.ts`. Redefined here
 // rather than imported because that file deliberately doesn't export
@@ -415,7 +415,7 @@ async function listCommunityPods(
   datanetFilter: string | undefined,
   limit: number | undefined,
 ): Promise<void> {
-  const baseUrl = process.env.REPPO_PUBLIC_API_URL ?? DEFAULT_PUBLIC_API_URL;
+  const baseUrl = process.env.REPPO_PUBLIC_API_URL ?? defaultPublicApiUrl(network);
 
   // Fetch subnets first: needed to build the CUID → numeric-id map and to
   // resolve the --datanet filter to the CUID the pods carry.

@@ -26,7 +26,7 @@ import { cliError, emit } from '../output/format.js';
 import { createClients, nextNonce } from '../chain/clients.js';
 import { veReppo } from '../chain/contracts.js';
 import { decodeRevert } from '../chain/errors.js';
-import { handleSubmittedCacheDecision } from './write-cache.js';
+import { handleSubmittedCacheDecision, basescanTxUrl } from './write-cache.js';
 import { waitForWriteReceipt, receiptGasEth } from '../chain/receipt.js';
 import { begin, markSubmitted, markConfirmed, markFailed, peekIdempotent } from '../state/idempotency.js';
 
@@ -57,6 +57,7 @@ export class UnlockCommand extends BaseCommand {
   async execute(): Promise<number> {
     try {
       const cfg = this.loadConfig();
+      this.requireStakingNetwork(cfg.network);
       const pk = cfg.privateKey;
       if (!pk) {
         throw cliError(
@@ -225,9 +226,7 @@ export class UnlockCommand extends BaseCommand {
         to: target,
         amount: { raw: amount.toString(), formatted: formatUnits(amount, 18) },
         block: receipt.blockNumber.toString(),
-        basescanUrl: cfg.network === 'mainnet'
-          ? `https://basescan.org/tx/${tx}`
-          : `https://sepolia.basescan.org/tx/${tx}`,
+        basescanUrl: basescanTxUrl(cfg.network, tx),
       };
       if (this.idempotencyKey) await markConfirmed(this.idempotencyKey, COMMAND, args, result, tx);
 

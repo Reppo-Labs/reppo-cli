@@ -12,10 +12,13 @@
  * placeholder — fails loud rather than silently calling 0x0.
  */
 import type { Address } from 'viem';
+import { cliError } from '../output/format.js';
 import { getAddresses, requireAddress, type Network } from './addresses.js';
 import {
   POD_MANAGER_ABI,
+  POD_MANAGER_RBV1_ABI,
   SUBNET_MANAGER_ABI,
+  SUBNET_MANAGER_RBV1_ABI,
   VE_REPPO_ABI,
   ERC20_ABI,
 } from './abis.js';
@@ -62,6 +65,47 @@ export function usdcToken(network: Network): Contract<typeof ERC20_ABI> {
   return {
     address: requireAddress(addrs.usdc, 'USDC'),
     abi: ERC20_ABI,
+  };
+}
+
+// ── RBV1 variants (Robinhood Chain) ────────────────────────────────────
+//
+// Same addresses as podManager()/subnetManager() on the robinhood network,
+// but paired with the RBV1 single-token ABI surface. Commands that support
+// robinhood branch explicitly on `cfg.network === 'robinhood'` and call
+// these; the V2 accessors above keep their literal ABI types so existing
+// call sites see no type churn. Functions with V2-identical signatures
+// (vote, claims, the vote getters, veReppo reads) go through the V2
+// accessors even on robinhood — the ABI fragment encodes identically.
+
+/** Defensive: pairing the RBV1 ABI with a Base V2 address would encode calls
+ *  to functions that don't exist there. Commands only reach these accessors
+ *  behind a `network === 'robinhood'` branch; this makes the misuse impossible
+ *  rather than merely absent. */
+function requireRbNetwork(network: Network): void {
+  if (network !== 'robinhood') {
+    throw cliError(
+      'INTERNAL_ERROR',
+      `RBV1 contract accessor called on "${network}" — the RBV1 ABI surface exists only on robinhood.`,
+    );
+  }
+}
+
+export function podManagerRb(network: Network): Contract<typeof POD_MANAGER_RBV1_ABI> {
+  requireRbNetwork(network);
+  const addrs = getAddresses(network);
+  return {
+    address: requireAddress(addrs.podManager, 'PodManager'),
+    abi: POD_MANAGER_RBV1_ABI,
+  };
+}
+
+export function subnetManagerRb(network: Network): Contract<typeof SUBNET_MANAGER_RBV1_ABI> {
+  requireRbNetwork(network);
+  const addrs = getAddresses(network);
+  return {
+    address: requireAddress(addrs.subnetManager, 'SubnetManager'),
+    abi: SUBNET_MANAGER_RBV1_ABI,
   };
 }
 
