@@ -81,6 +81,11 @@ describe('tryX() non-throwing contract helpers', () => {
       expect(c.address).toBe('0xDAd72306b2ee410B20795D353cF7913AA7Eb15aa');
       expect(c.abi).toBe(SUBNET_MANAGER_RBV1_ABI);
     });
+
+    it('RBV1 accessors refuse non-robinhood networks (would pair RBV1 ABI with a V2 address)', () => {
+      expect(() => podManagerRb('mainnet')).toThrow(/robinhood/);
+      expect(() => subnetManagerRb('testnet')).toThrow(/robinhood/);
+    });
   });
 });
 

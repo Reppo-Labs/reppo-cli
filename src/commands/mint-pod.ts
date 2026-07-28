@@ -317,6 +317,10 @@ export class MintPodCommand extends BaseCommand {
             address: smRb.address, abi: smRb.abi, functionName: 'getSubnetToken', args: [datanetId],
           });
           const t = erc20(rbFeeToken);
+          // Laxer than grant-access's hard INVALID_PRIMARY_TOKEN policy on
+          // purpose: decimals here only formats the cosmetic feePaid field —
+          // the allowance/approve below uses the raw wei fee, so a wrong
+          // fallback can't corrupt any amount that matters.
           rbFeeTokenDecimals = await clients.publicClient
             .readContract({ address: t.address, abi: t.abi, functionName: 'decimals' })
             .catch(() => 18);
