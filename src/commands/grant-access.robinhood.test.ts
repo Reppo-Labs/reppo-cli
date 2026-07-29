@@ -91,23 +91,9 @@ describe('grant-access — robinhood (RBV1) dry-run branch', () => {
     expect(seenReads).not.toContain('getAccessFeePrimaryToken');
   });
 
-  it('rejects --token primary with INVALID_TOKEN (no token choice on RBV1)', async () => {
-    const chunks: string[] = [];
-    vi.spyOn(process.stderr, 'write').mockImplementation((c: string | Uint8Array) => {
-      chunks.push(c.toString());
-      return true;
-    });
-    vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
-      throw new Error(`__exit__${code ?? 0}`);
-    }) as never);
-    const cmd = new GrantAccessCommand();
-    Object.assign(cmd, {
-      datanet: '1', token: 'primary', json: true, dryRun: true,
-      network: undefined, to: undefined, idempotencyKey: undefined, rpcUrl: undefined,
-    });
-    await expect(cmd.execute()).rejects.toThrow('__exit__1');
-    const line = chunks.join('').trim().split('\n').filter((l) => l.startsWith('{')).pop();
-    const parsed = JSON.parse(line ?? '{}') as { error: { code: string } };
-    expect(parsed.error.code).toBe('INVALID_TOKEN');
+  it('accepts --token primary as an alias (orquestra passes it for non-REPPO fees)', async () => {
+    const result = await runDryRun({ token: 'primary' });
+    expect(result.token).toBe('subnet-token');
+    expect((result.feeToken as { symbol: string }).symbol).toBe('PAW');
   });
 });

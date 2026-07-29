@@ -54,19 +54,6 @@ describe('mint-pod — robinhood (RBV1) branch', () => {
     return cmd;
   }
 
-  async function captureErrorCode(cmd: MintPodCommand): Promise<string> {
-    const chunks: string[] = [];
-    vi.spyOn(process.stderr, 'write').mockImplementation((c: string | Uint8Array) => {
-      chunks.push(c.toString());
-      return true;
-    });
-    vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
-      throw new Error(`__exit__${code ?? 0}`);
-    }) as never);
-    await expect(cmd.execute()).rejects.toThrow('__exit__1');
-    const line = chunks.join('').trim().split('\n').filter((l) => l.startsWith('{')).pop();
-    return (JSON.parse(line ?? '{}') as { error: { code: string } }).error.code;
-  }
 
   it('dry-run simulates RBV1 mintPod against the RBV1 PodManager and reports subnet-token', async () => {
     const out: string[] = [];
@@ -84,8 +71,16 @@ describe('mint-pod — robinhood (RBV1) branch', () => {
     expect(seenSims).toEqual([{ functionName: 'mintPod', address: RB_POD_MANAGER }]);
   });
 
-  it('rejects --token primary with INVALID_TOKEN (no token choice on RBV1)', async () => {
-    expect(await captureErrorCode(makeCmd({ token: 'primary' }))).toBe('INVALID_TOKEN');
+  it('accepts --token primary as an alias (the subnet token IS the primary token on RBV1)', async () => {
+    const out: string[] = [];
+    vi.spyOn(process.stdout, 'write').mockImplementation((c: string | Uint8Array) => {
+      out.push(c.toString());
+      return true;
+    });
+    const code = await makeCmd({ token: 'primary' }).execute();
+    expect(code).toBe(0);
+    const line = out.join('').trim().split('\n').filter((l) => l.startsWith('{')).pop();
+    expect((JSON.parse(line ?? '{}') as { token?: string }).token).toBe('subnet-token');
   });
 
   it('accepts Phase-2 publishing on robinhood (posts to robinhood.reppo.ai)', async () => {

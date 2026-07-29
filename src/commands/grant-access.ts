@@ -92,14 +92,11 @@ export class GrantAccessCommand extends BaseCommand {
       // RBV1 (robinhood) has a single accessSubnet(subnetId, to) that always
       // charges the subnet's own token — the REPPO/primary choice doesn't
       // exist there. The default --token value ("reppo") is tolerated.
+      // Both --token values route to that one path: "primary" is semantically
+      // CORRECT there (the subnet token IS the primary token — consumers like
+      // orquestra pass it for any non-REPPO fee), and the default "reppo" is
+      // tolerated so plain invocations work unchanged.
       const isRbNetwork = cfg.network === 'robinhood';
-      if (isRbNetwork && this.token === 'primary') {
-        throw cliError(
-          'INVALID_TOKEN',
-          "--token does not apply on robinhood — the access fee is always paid in the datanet's own token.",
-          'Drop the --token flag; the fee token is resolved on-chain via getSubnetToken.',
-        );
-      }
       const tokenLabel = isRbNetwork ? 'subnet-token' : this.token;
       const fns = accessFns(this.token);
 
