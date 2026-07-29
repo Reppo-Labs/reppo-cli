@@ -164,14 +164,11 @@ export class MintPodCommand extends BaseCommand {
       // charges the subnet's own token — the REPPO/primary choice doesn't
       // exist there. The default --token value ("reppo") is tolerated so
       // plain `reppo mint-pod --datanet N` works unchanged.
+      // Both --token values route to that one path: "primary" is semantically
+      // CORRECT there (the subnet token IS the primary token — consumers like
+      // orquestra pass it for any non-REPPO fee), and the default "reppo" is
+      // tolerated so plain invocations work unchanged.
       const isRbNetwork = cfg.network === 'robinhood';
-      if (isRbNetwork && this.token === 'primary') {
-        throw cliError(
-          'INVALID_TOKEN',
-          "--token does not apply on robinhood — the publishing fee is always paid in the datanet's own token.",
-          'Drop the --token flag; the fee token is resolved on-chain via getSubnetToken.',
-        );
-      }
       const tokenLabel = isRbNetwork ? 'subnet-token' : this.token;
       const functionName = this.token === 'reppo' ? 'mintPodWithREPPO' : 'mintPodWithPrimaryToken';
 
