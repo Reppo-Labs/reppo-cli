@@ -54,19 +54,6 @@ describe('mint-pod — robinhood (RBV1) branch', () => {
     return cmd;
   }
 
-  async function captureErrorCode(cmd: MintPodCommand): Promise<string> {
-    const chunks: string[] = [];
-    vi.spyOn(process.stderr, 'write').mockImplementation((c: string | Uint8Array) => {
-      chunks.push(c.toString());
-      return true;
-    });
-    vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
-      throw new Error(`__exit__${code ?? 0}`);
-    }) as never);
-    await expect(cmd.execute()).rejects.toThrow('__exit__1');
-    const line = chunks.join('').trim().split('\n').filter((l) => l.startsWith('{')).pop();
-    return (JSON.parse(line ?? '{}') as { error: { code: string } }).error.code;
-  }
 
   it('dry-run simulates RBV1 mintPod against the RBV1 PodManager and reports subnet-token', async () => {
     const out: string[] = [];
